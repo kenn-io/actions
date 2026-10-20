@@ -21,6 +21,9 @@ The action reads these files anywhere in the candidate checkout, except under
   `git+https://github.com/kenn-io/...` dependencies.
 - `Makefile`: `go run` and `go install` of `go.kenn.io/...@VERSION`.
 - `.custom-gcl.yml`: `go.kenn.io` golangci-lint plugin versions.
+- `.github/workflows/*.yml`, `action.yml`, and `action.yaml`: `uses:
+  kenn-io/...@REF` steps and reusable workflows, including this action's own
+  pin.
 
 A pseudo-version names a commit. Any other Go version names a tag. The check
 asks GitHub to compare each revision with the sibling's `main` and fails when

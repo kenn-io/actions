@@ -51,7 +51,9 @@ replace go.kenn.io/app-client => ../..
 		"tools/Makefile":  {Data: []byte("HUMA_CHECK_VERSION := v0.25.1-0.20260915220235-532a5501741e\n\nlint:\n\tgo run go.kenn.io/kit/cmd/huma-check@$(HUMA_CHECK_VERSION) ./...\n")},
 		".custom-gcl.yml": {Data: []byte("version: v2.14.0\nplugins:\n  - module: \"go.kenn.io/kit\"\n    import: \"go.kenn.io/kit/lint/gclplugin\"\n    version: \"v0.35.1\"\n")},
 		// A plugin built from this checkout pins nothing.
-		"kit/.custom-gcl.yml": {Data: []byte("version: v2.14.0\nplugins:\n  - module: \"go.kenn.io/kit\"\n    import: \"go.kenn.io/kit/lint/gclplugin\"\n    path: \".\"\n")},
+		"kit/.custom-gcl.yml":      {Data: []byte("version: v2.14.0\nplugins:\n  - module: \"go.kenn.io/kit\"\n    import: \"go.kenn.io/kit/lint/gclplugin\"\n    path: \".\"\n")},
+		".github/workflows/ci.yml": {Data: []byte("jobs:\n  pins:\n    steps:\n      - uses: actions/checkout@v7\n      - uses: kenn-io/actions/sibling-pins@fc37c96bb2d4\n      - uses: \"kenn-io/forge/.github/workflows/build.yml@v0.4.0\" # reusable workflow\n")},
+		"tools/lint/action.yml":    {Data: []byte("runs:\n  using: composite\n  steps:\n    - uses: kenn-io/kit/actions/lint@v0.38.0\n")},
 		// Installed packages are not this repository's pins.
 		"web/node_modules/x/package.json": {Data: []byte(`{"dependencies": {"y": "github:kenn-io/other#deadbeef"}}`)},
 	}
@@ -77,6 +79,9 @@ replace go.kenn.io/app-client => ../..
 		{"kit-ui", "bccce525981be5a2afbcb95fba29952052a659e1"},
 		{"kit-ui", "bccce52"},
 		{"brand", "79dc99be"},
+		{"actions", "fc37c96bb2d4"},
+		{"forge", "v0.4.0"},
+		{"kit", "v0.38.0"},
 	}, got)
 }
 

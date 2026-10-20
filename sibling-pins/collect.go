@@ -55,6 +55,8 @@ var (
 	gitPin = regexp.MustCompile(`(?:github\.com[/:]|github:)` + Owner + `/([A-Za-z0-9._-]+?)(?:\.git)?/?#([^"'\s,]+)`)
 	// go run and go install name a tool as PACKAGE@VERSION.
 	goRunPin = regexp.MustCompile(`go\.kenn\.io/([A-Za-z0-9._-]+)[A-Za-z0-9._/-]*@([^\s"'` + "`" + `]+)`)
+	// A step or job that uses a kenn-io action or reusable workflow.
+	actionUse = regexp.MustCompile(`uses:[ \t]*["']?` + Owner + `/([A-Za-z0-9._-]+)(?:/[^@\s"']*)?@([^\s"'#]+)`)
 	// A simple Makefile assignment such as HUMA_CHECK_VERSION := v1.2.3.
 	makeAssignment = regexp.MustCompile(`(?m)^[ \t]*(?:override[ \t]+|export[ \t]+)?([A-Za-z0-9_]+)[ \t]*(?::{1,3}|\?|\+)?=[ \t]*(\S+)[ \t]*$`)
 	makeReference  = regexp.MustCompile(`\$[({]([A-Za-z0-9_]+)[)}]`)
@@ -76,7 +78,7 @@ func Collect(fsys fs.FS) ([]Pin, error) {
 		if entry.IsDir() && (entry.Name() == "node_modules" || entry.Name() == ".git") {
 			return fs.SkipDir
 		}
-		parse := parsers[entry.Name()]
+		parse := parserFor(name)
 		if parse == nil || !entry.Type().IsRegular() {
 			return nil
 		}
@@ -103,6 +105,27 @@ var parsers = map[string]func(name string, data []byte) ([]Pin, error){
 	"bun.lock":        gitPins,
 	"Makefile":        goRunPins,
 	".custom-gcl.yml": golangciPins,
+	"action.yml":      actionPins,
+	"action.yaml":     actionPins,
+}
+
+// parserFor returns the parser for a file, or nil. Workflows live under
+// .github/workflows with any name.
+func parserFor(name string) func(name string, data []byte) ([]Pin, error) {
+	if path.Dir(name) == ".github/workflows" && (path.Ext(name) == ".yml" || path.Ext(name) == ".yaml") {
+		return actionPins
+	}
+	return parsers[path.Base(name)]
+}
+
+// actionPins finds kenn-io actions a workflow or composite action uses, such
+// as kenn-io/actions/sibling-pins@<commit>.
+func actionPins(name string, data []byte) ([]Pin, error) {
+	var pins pinList
+	for _, match := range actionUse.FindAllSubmatch(data, -1) {
+		pins.add(newPin(string(match[1]), string(match[2]), fmt.Sprintf("%s: %s", name, match[0])))
+	}
+	return pins.pins, errors.Join(pins.problems...)
 }
 
 func goModPins(name string, data []byte) ([]Pin, error) {
