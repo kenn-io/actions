@@ -55,8 +55,9 @@ var (
 	gitPin = regexp.MustCompile(`(?:github\.com[/:]|github:)` + Owner + `/([A-Za-z0-9._-]+?)(?:\.git)?/?#([^"'\s,]+)`)
 	// go run and go install name a tool as PACKAGE@VERSION.
 	goRunPin = regexp.MustCompile(`go\.kenn\.io/([A-Za-z0-9._-]+)[A-Za-z0-9._/-]*@([^\s"'` + "`" + `]+)`)
-	// A step or job that uses a kenn-io action or reusable workflow.
-	actionUse = regexp.MustCompile(`uses:[ \t]*["']?` + Owner + `/([A-Za-z0-9._-]+)(?:/[^@\s"']*)?@([^\s"'#]+)`)
+	// A step or job that uses a kenn-io action or reusable workflow. Only a
+	// uses: key at the start of a line counts, not the same text in a script.
+	actionUse = regexp.MustCompile(`(?m)^[ \t]*(?:-[ \t]+)?uses:[ \t]*["']?` + Owner + `/([A-Za-z0-9._-]+)(?:/[A-Za-z0-9._/-]*)?@([^\s"'#]+)`)
 	// A simple Makefile assignment such as HUMA_CHECK_VERSION := v1.2.3.
 	makeAssignment = regexp.MustCompile(`(?m)^[ \t]*(?:override[ \t]+|export[ \t]+)?([A-Za-z0-9_]+)[ \t]*(?::{1,3}|\?|\+)?=[ \t]*(\S+)[ \t]*$`)
 	makeReference  = regexp.MustCompile(`\$[({]([A-Za-z0-9_]+)[)}]`)
