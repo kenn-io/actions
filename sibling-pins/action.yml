@@ -1,0 +1,48 @@
+name: Sibling pins on main
+description: >-
+  Fail when a dependency file pins a kenn-io sibling repository at a revision
+  that is not on that sibling's main branch.
+
+inputs:
+  github-token:
+    description: >-
+      Token that can read every pinned sibling. The job's own token reads
+      public siblings; private siblings need a GitHub App token with contents
+      read access.
+    default: ${{ github.token }}
+  ref:
+    description: >-
+      Candidate revision whose dependency files are checked. The default is the
+      merge group head, the pull request merge commit, or the pushed commit.
+    default: ${{ github.event.merge_group.head_sha || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.sha }}
+
+runs:
+  using: composite
+  steps:
+    # Only dependency files are checked out. The checker never runs code from
+    # the candidate.
+    - name: Checkout candidate dependency files
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ inputs.ref }}
+        path: .sibling-pins-candidate
+        persist-credentials: false
+        sparse-checkout: |
+          go.mod
+          package.json
+          bun.lock
+          Makefile
+          .custom-gcl.yml
+        sparse-checkout-cone-mode: false
+    - name: Set up Go for the checker
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+    - name: Check sibling pins
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        CANDIDATE: ${{ github.workspace }}/.sibling-pins-candidate
+      run: go run . --root "$CANDIDATE"
