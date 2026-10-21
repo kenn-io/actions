@@ -1,7 +1,7 @@
 # Sibling pins on main
 
-This action fails a pull request or merge queue entry when the repository pins
-a kenn-io sibling at a revision that is not on that sibling's `main` branch.
+This action fails a pull request or merge queue entry when the repository pins a
+kenn-io sibling at a revision that is not on that sibling's `main` branch.
 
 Sibling repositories squash-merge, so a pull request head never reaches the
 sibling's `main`. Go can download such a commit only while the module proxy
@@ -21,9 +21,9 @@ The action reads these files anywhere in the candidate checkout, except under
   `git+https://github.com/kenn-io/...` dependencies.
 - `Makefile`: `go run` and `go install` of `go.kenn.io/...@VERSION`.
 - `.custom-gcl.yml`: `go.kenn.io` golangci-lint plugin versions.
-- `.github/workflows/*.yml`, `action.yml`, and `action.yaml`: `uses:
-  kenn-io/...@REF` steps and reusable workflows, including this action's own
-  pin.
+- `.github/workflows/*.yml`, `action.yml`, and `action.yaml`:
+  `uses: kenn-io/...@REF` steps and reusable workflows, including this action's
+  own pin.
 
 A pseudo-version names a commit. Any other Go version names a tag. The check
 asks GitHub to compare each revision with the sibling's `main` and fails when
@@ -31,14 +31,14 @@ the revision has commits that `main` does not.
 
 ## Use it
 
-Add a workflow that runs on `pull_request_target` and `merge_group`, then make
-its job a required status check for `main`.
+Add a workflow that runs on `pull_request` and `merge_group`, then make its job
+a required status check for `main`.
 
 ```yaml
 name: Sibling pins on main
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, edited]
   merge_group:
     types: [checks_requested]
@@ -55,10 +55,9 @@ jobs:
       - uses: kenn-io/actions/sibling-pins@<commit on main>
 ```
 
-- `pull_request_target` takes the workflow, and so this action's pinned
-  commit, from the base branch. A pull request therefore cannot change the
-  checker that judges it. The action checks out only the candidate's
-  dependency files and never runs the candidate's code.
+- `pull_request` runs with the same permissions as normal pull request CI,
+  including for forks. The action checks out only the candidate's dependency
+  files and never runs the candidate's code. Do not use `pull_request_target`.
 - Pin the action to a full commit on this repository's `main`.
 - Keep the job name `Sibling pins on main`. The required status check matches
   that name.
@@ -70,6 +69,9 @@ The job's own token can read public siblings only. A private sibling the token
 cannot read fails with "has no revision ..., or this check cannot read the
 repository". When a repository pins private siblings, pass a GitHub App token
 with contents read access to them:
+
+Fork pull request workflows do not receive repository secrets, so the App token
+below is available only to same-repository pull requests and merge groups.
 
 ```yaml
     steps:
@@ -92,8 +94,8 @@ Move the pin to the sibling's merged commit on `main`.
 
 - For a Go module, run `go get go.kenn.io/<repo>@<commit>` and then
   `go mod tidy`. An indirect requirement counts; Go downloads it the same way.
-- For a frontend package, change the `#<commit>` in `package.json` and
-  reinstall to update `bun.lock`.
+- For a frontend package, change the `#<commit>` in `package.json` and reinstall
+  to update `bun.lock`.
 
 ## Run it locally
 
