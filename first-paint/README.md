@@ -11,11 +11,18 @@ stylesheet and font response for 600 ms, so any page that paints before a late
 request arrives paints first and fails. For each page it reports:
 
 - a stylesheet or font that returned an error or failed to load;
-- a stylesheet that finished after the first contentful paint;
+- a stylesheet the page requested before its first contentful paint that
+  finished after it;
 - a font that failed to decode;
 - a font the page uses that had not loaded when the page first painted.
 
-Fonts the page declares but never uses are ignored.
+The check ignores fonts the page declares but never uses, stylesheets for
+other media such as print, and stylesheets the page requests after its first
+paint, such as one a route loads on demand.
+
+Firefox records no first contentful paint for some pages that the hold script
+below kept hidden. For those pages the check uses the time the script revealed
+the page.
 
 ## Use it
 
@@ -75,14 +82,14 @@ A page passes in both browsers when it does two things.
 
 2. **Inline [`hold-first-paint.js`](hold-first-paint.js) in `<head>`, before
    any stylesheet.** Firefox decodes an embedded font before it first paints.
-   Chromium paints one frame first, in the fallback face. The script hides the
-   page until its stylesheets and fonts load, for at most 3 seconds, and pages
-   without JavaScript are never hidden. A page with a `script-src` Content
-   Security Policy needs the script's hash in that policy.
+   Chromium paints one frame first, in the fallback face. The script sets the
+   page's opacity to 0 until its stylesheets and fonts load, for at most 3
+   seconds, and pages without JavaScript are never hidden. A page with a
+   `script-src` Content Security Policy needs the script's hash in that policy.
 
-A stylesheet that finishes after first paint does not block rendering. Load it
-with a plain `<link rel="stylesheet">` in `<head>`, without a `media` swap or a
-script that adds it later.
+A stylesheet that finishes after first paint did not block it. Load each
+stylesheet the first paint needs with a plain `<link rel="stylesheet">` in
+`<head>`, without a `media` swap or a script that adds it.
 
 ## Run it locally
 

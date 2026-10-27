@@ -4,8 +4,18 @@
 // Inline this script in <head> before any stylesheet.
 (() => {
   const root = document.documentElement;
-  root.style.visibility = "hidden";
-  const show = () => root.style.removeProperty("visibility");
+  // Opacity hides every descendant. A descendant can override visibility.
+  const opacity = root.style.opacity;
+  root.style.opacity = "0";
+  let shown = false;
+  const show = () => {
+    if (shown) return;
+    shown = true;
+    root.style.opacity = opacity;
+    // The first-paint check reads this mark when a browser records no first
+    // contentful paint for the page.
+    performance.mark("hold-first-paint");
+  };
   // Never hide the page longer than a browser blocks text on a slow font.
   setTimeout(show, 3000);
   const ready = async () => {

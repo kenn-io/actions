@@ -63,16 +63,22 @@ describe("first-paint", () => {
   let embedded;
   /** @type {string} */
   let held;
+  /** @type {string} */
+  let data;
+  /** @type {string} */
+  let hold;
 
   before(async () => {
     root = await mkdtemp(join(tmpdir(), "first-paint-"));
-    const data = `data:font/woff2;base64,${(await readFile(FONT)).toString("base64")}`;
+    data = `data:font/woff2;base64,${(await readFile(FONT)).toString("base64")}`;
     embedded = await site(root, "embedded", page(`<link rel="stylesheet" href="/site.css">`), {
       "site.css": fontFace(data),
     });
     // Embeds its font and inlines the hold script, as the README tells a UI to do.
-    const hold = `<script>${await readFile(HOLD, "utf8")}</script><link rel="stylesheet" href="/site.css">`;
-    held = await site(root, "held", page(hold), { "site.css": fontFace(data) });
+    hold = await readFile(HOLD, "utf8");
+    held = await site(root, "held", page(`<script>${hold}</script><link rel="stylesheet" href="/site.css">`), {
+      "site.css": fontFace(data),
+    });
   });
 
   after(() => rm(root, { recursive: true, force: true }));
@@ -135,6 +141,79 @@ describe("first-paint", () => {
     } finally {
       server.close();
     }
+  });
+
+  it("hides text that sets its own visibility until its font decodes", async () => {
+    const text = `<p style="font-family: Fixture, monospace; visibility: visible">The quick brown fox</p>`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><script>${hold}</script><link rel="stylesheet" href="/site.css"></head><body>${text}</body></html>`;
+    const dir = await site(root, "visible-text", html, { "site.css": fontFace(data) });
+    const result = await run(["--dist", dir, "--browser", "chromium"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  // Firefox records no first contentful paint for this page, so the check
+  // uses the time the hold script revealed it.
+  it("passes a held page that scrolls before it is shown", async () => {
+    const items = Array.from({ length: 9 }, (_, i) => `<p id="p${i}">${i}</p>`).join("");
+    const body = `<div style="height: 100px; overflow: auto; font-family: Fixture">${items}</div><script>document.getElementById("p8").scrollIntoView()</script>`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><script>${hold}</script><link rel="stylesheet" href="/site.css"></head><body>${body}</body></html>`;
+    const dir = await site(root, "scrolled", html, { "site.css": fontFace(data) });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("checks a face of one stretch apart from the same face in another", async () => {
+    const css = `${fontFace(data)} @font-face { font-family: Fixture; font-stretch: condensed; src: url("/font.woff2") format("woff2"); }`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p style="font-family: Fixture">Normal</p><p style="font-family: Fixture; font-stretch: condensed">Condensed</p></body></html>`;
+    const dir = await site(root, "stretch", html, { "site.css": css });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^firefox \/: font "Fixture normal normal condensed" was not loaded at first paint/m);
+  });
+
+  it("passes a page that loads its font before it first shows text", async () => {
+    const script = `setTimeout(async () => { await document.fonts.load("16px Fixture"); document.body.innerHTML = ${JSON.stringify(BODY)}; }, 1500)`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><script>${script}</script></body></html>`;
+    const dir = await site(root, "late-text", html, { "site.css": fontFace("/font.woff2") });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("passes a page whose animation frame adds a loaded font with its text", async () => {
+    const script = `const face = new FontFace("Fixture", "url(${data})"); face.load().then(() => requestAnimationFrame(() => { document.fonts.add(face); document.body.innerHTML = ${JSON.stringify(BODY)}; }));`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><script>${script}</script></body></html>`;
+    const dir = await site(root, "added-face", html);
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("ignores a stylesheet for other media", async () => {
+    const dir = await site(root, "print-sheet", page(`<link rel="stylesheet" href="/print.css" media="print">`), {
+      "print.css": "p { color: black; }",
+    });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("ignores a stylesheet the page requests after its first paint", async () => {
+    const script = `new PerformanceObserver(() => { const link = document.createElement("link"); link.rel = "stylesheet"; link.href = "/route.css"; document.head.append(link); }).observe({ type: "paint" })`;
+    const dir = await site(root, "route-sheet", page(`<script>${script}</script>`), { "route.css": "p { color: black; }" });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("checks a page whose file name needs URL encoding", async () => {
+    const dir = await site(root, "encoded", page(""), { "a#b.html": page("") });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /^2 page\(s\)/);
+  });
+
+  it("reports a request with a malformed path", async () => {
+    const dir = await site(root, "malformed", page(`<link rel="stylesheet" href="/%E0%A4%A.css">`));
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^firefox \/: stylesheet \/%E0%A4%A\.css returned 400$/m);
   });
 
   it("rejects an unknown browser before loading anything", async () => {
