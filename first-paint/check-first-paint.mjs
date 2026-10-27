@@ -150,17 +150,12 @@ function recordFrames() {
       .filter((entry) => !document.fonts.check(entry.font, entry.text))
       .map((entry) => ({ name: entry.name, text: entry.text.slice(0, 40) }));
   };
-  // The frame's start time, which animation frame callbacks receive.
-  // performance.now() later in the frame can run past first paint on a busy
-  // machine, which would skip the frame that painted.
-  let frameStart = 0;
   // Resize observers run after the frame's animation frame callbacks and its
   // style and layout, just before it paints. By then the page's own callbacks
-  // have added their text and fonts.
-  const observer = new ResizeObserver(() => frames.push({ t: frameStart, waiting: waiting() }));
-  /** @param {number} start */
-  const tick = (start) => {
-    frameStart = start;
+  // have added their text and fonts. Both browsers time first paint at the
+  // moment the painting frame's observers ran.
+  const observer = new ResizeObserver(() => frames.push({ t: performance.now(), waiting: waiting() }));
+  const tick = () => {
     // A new observation always reports, so the observer runs every frame.
     observer.unobserve(document.documentElement);
     observer.observe(document.documentElement);
@@ -189,13 +184,16 @@ function readPaint(revealMark) {
     // paintTime when it painted. Fonts and styles must be ready at paint.
     const time = entry.paintTime ?? entry.startTime;
     paint = time;
-    // Firefox rounds first paint down to a whole millisecond, so the frame
-    // that painted can start up to 1 ms after it. Frames are 8 ms or more
-    // apart, so 2 ms cannot reach the next one.
-    atPaint = frames.filter((frame) => frame.t <= time + 2).at(-1);
+    // The frame that painted is the last one sampled by then. Firefox rounds
+    // both times to a millisecond, and the next sample comes 6 ms or more
+    // later, so 1 ms of slack cannot reach it. A frame can start before the
+    // previous one paints on a slow machine, so the frame's start time
+    // cannot tell them apart.
+    atPaint = frames.filter((frame) => frame.t <= time + 1).at(-1);
   } else if (reveal) {
     // Firefox records no first contentful paint for some pages the hold
-    // script hid. Such a page first shows in the frame after the reveal.
+    // script hid. Such a page first shows in the frame sampled after the
+    // reveal.
     paint = reveal.startTime;
     atPaint = frames.find((frame) => frame.t > reveal.startTime);
   }
