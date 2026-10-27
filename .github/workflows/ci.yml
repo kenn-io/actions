@@ -13,6 +13,10 @@ jobs:
     name: sibling-pins
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Module-relative source paths let every checkout share Go build cache
+      # entries.
+      GOFLAGS: -trimpath
     defaults:
       run:
         working-directory: sibling-pins
