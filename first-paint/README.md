@@ -14,12 +14,12 @@ request arrives paints first and fails. For each page it reports:
 - a stylesheet, or a stylesheet it imports, that the page requested before its
   first contentful paint and that finished after it;
 - a font that failed to decode;
-- a font that was still loading in the frame that first painted, so its text
-  painted in a fallback face;
+- visible text whose font had not loaded in the frame that first painted, so
+  the text painted in a fallback face;
 - fonts still loading 5 seconds after first paint.
 
-The check follows redirects. It ignores fonts that had not started loading at
-first paint, stylesheets for other media such as print, and stylesheets the
+The check follows redirects. It ignores fonts no visible text used at first
+paint, stylesheets for other media such as print, and stylesheets the
 page requests after its first paint, such as one a route loads on demand.
 
 Firefox records no first contentful paint for some pages that the hold script

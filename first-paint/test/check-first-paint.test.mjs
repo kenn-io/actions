@@ -113,7 +113,7 @@ describe("first-paint", () => {
     const result = await run(["--dist", embedded]);
     assert.equal(result.code, 1);
     assert.doesNotMatch(result.stderr, /^firefox /m);
-    assert.match(result.stderr, /^chromium \/: font "Fixture normal normal" was not loaded at first paint/m);
+    assert.match(result.stderr, /^chromium \/: font "Fixture 400 normal" was not loaded at first paint/m);
   });
 
   it("fails a page whose font is a separate request, in both browsers", async () => {
@@ -122,8 +122,8 @@ describe("first-paint", () => {
     });
     const result = await run(["--dist", dir]);
     assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: font "Fixture normal normal" was not loaded at first paint/m);
-    assert.match(result.stderr, /^chromium \/: font "Fixture normal normal" was not loaded at first paint/m);
+    assert.match(result.stderr, /^firefox \/: font "Fixture 400 normal" was not loaded at first paint/m);
+    assert.match(result.stderr, /^chromium \/: font "Fixture 400 normal" was not loaded at first paint/m);
   });
 
   it("fails a page whose stylesheet does not block rendering", async () => {
@@ -152,7 +152,7 @@ describe("first-paint", () => {
       const url = `${origin}/app/`;
       const result = await run(["--url", url, "--browser", "firefox"]);
       assert.equal(result.code, 1);
-      assert.match(result.stderr, new RegExp(`^firefox ${url}: font "Fixture normal normal" was not loaded`, "m"));
+      assert.match(result.stderr, new RegExp(`^firefox ${url}: font "Fixture 400 normal" was not loaded`, "m"));
     });
   });
 
@@ -208,7 +208,7 @@ describe("first-paint", () => {
     const dir = await site(root, "stretch", html, { "site.css": css });
     const result = await run(["--dist", dir, "--browser", "firefox"]);
     assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: font "Fixture normal normal condensed" was not loaded at first paint/m);
+    assert.match(result.stderr, /^firefox \/: font "Fixture 400 normal condensed" was not loaded at first paint/m);
   });
 
   it("passes a page that loads its font before it first shows text", async () => {
@@ -268,6 +268,14 @@ describe("first-paint", () => {
     const script = `setTimeout(async () => { await document.fonts.load("16px Fixture"); document.body.insertAdjacentHTML("beforeend", ${JSON.stringify(BODY)}); }, 30)`;
     const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><h1>Heading</h1><script>${script}</script></body></html>`;
     const dir = await site(root, "font-after-paint", html, { "site.css": fontFace("/font.woff2") });
+    const result = await run(["--dist", dir]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("passes a page that starts loading its font before first paint and shows its text after", async () => {
+    const script = `document.fonts.load("16px Fixture").then(() => document.body.insertAdjacentHTML("beforeend", ${JSON.stringify(BODY)}))`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"><script>${script}</script></head><body><h1>Heading</h1></body></html>`;
+    const dir = await site(root, "preloaded-font", html, { "site.css": fontFace("/font.woff2") });
     const result = await run(["--dist", dir]);
     assert.equal(result.code, 0, result.stderr);
   });

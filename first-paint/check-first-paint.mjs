@@ -42,13 +42,14 @@ const CONTENT_TYPES = {
 };
 
 /**
- * @typedef {{ t: number, loading: string[] }} Frame
+ * @typedef {{ name: string, text: string }} Waiting
+ * @typedef {{ t: number, waiting: Waiting[] }} Frame
  * @typedef {{
  *   failedLoads: string[],
  *   paint: number | null,
  *   lateSheets: { href: string, start: number, end: number }[],
- *   faces: { key: string, name: string, status: string }[],
- *   loadingAtPaint: string[] | null,
+ *   faces: { name: string, status: string }[],
+ *   waitingAtPaint: Waiting[] | null,
  * }} PageReport
  */
 
@@ -104,26 +105,59 @@ function serve(root) {
 
 // Runs in the page before any of its own content.
 function recordFrames() {
-  // Subsets of one family differ only in their unicode range.
-  /** @param {FontFace} face */
-  const key = (face) => `${face.family} ${face.weight} ${face.style} ${face.stretch} ${face.unicodeRange}`;
+  // The font shorthand that document.fonts.check() takes accepts font-stretch
+  // only as a keyword, and Chromium computes it as a percentage.
+  /** @type {Record<string, string>} */
+  const STRETCH = {
+    "50%": "ultra-condensed",
+    "62.5%": "extra-condensed",
+    "75%": "condensed",
+    "87.5%": "semi-condensed",
+    "100%": "normal",
+    "112.5%": "semi-expanded",
+    "125%": "expanded",
+    "150%": "extra-expanded",
+    "200%": "ultra-expanded",
+  };
+  const KEYWORDS = new Set(Object.values(STRETCH));
+  const shown = { opacityProperty: true, visibilityProperty: true };
   /** @type {Frame[]} */
   const frames = [];
   /** @type {{ __frames?: Frame[] }} */ (/** @type {unknown} */ (window)).__frames = frames;
+  // Lists the fonts that visible text asks for and the browser has not loaded
+  // for that text, so the frame draws it in a fallback face.
+  const waiting = () => {
+    if (!document.body || !document.documentElement.checkVisibility(shown)) return [];
+    /** @type {Map<string, { font: string, name: string, text: string }>} */
+    const fonts = new Map();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.textContent?.trim();
+      const element = node.parentElement;
+      if (!text || !element?.checkVisibility(shown)) continue;
+      const style = getComputedStyle(element);
+      const stretch = STRETCH[style.fontStretch] ?? style.fontStretch;
+      const keyword = KEYWORDS.has(stretch) ? stretch : "normal";
+      const font = `${style.fontStyle} ${style.fontWeight} ${keyword} ${style.fontSize} ${style.fontFamily}`;
+      const family = (style.fontFamily.split(",")[0] ?? "").trim().replace(/^["']|["']$/g, "");
+      const name = `${family} ${style.fontWeight} ${style.fontStyle}${keyword === "normal" ? "" : ` ${keyword}`}`;
+      const entry = fonts.get(font) ?? { font, name, text: "" };
+      // A sample of each font's text is enough to pick its unicode ranges.
+      if (entry.text.length < 2000) entry.text += text;
+      fonts.set(font, entry);
+    }
+    return [...fonts.values()]
+      .filter((entry) => !document.fonts.check(entry.font, entry.text))
+      .map((entry) => ({ name: entry.name, text: entry.text.slice(0, 40) }));
+  };
   // The frame's start time, which animation frame callbacks receive.
   // performance.now() later in the frame can run past first paint on a busy
   // machine, which would skip the frame that painted.
   let frameStart = 0;
   // Resize observers run after the frame's animation frame callbacks and its
   // style and layout, just before it paints. By then the page's own callbacks
-  // have added their fonts, and Chromium has loaded any embedded font the
-  // layout uses.
-  const observer = new ResizeObserver(() => {
-    frames.push({
-      t: frameStart,
-      loading: [...document.fonts].filter((face) => face.status === "loading").map(key),
-    });
-  });
+  // have added their text and fonts.
+  const observer = new ResizeObserver(() => frames.push({ t: frameStart, waiting: waiting() }));
   /** @param {number} start */
   const tick = (start) => {
     frameStart = start;
@@ -141,8 +175,6 @@ function recordFrames() {
  * @param {string} revealMark
  */
 function readPaint(revealMark) {
-  /** @param {FontFace} face */
-  const key = (face) => `${face.family} ${face.weight} ${face.style} ${face.stretch} ${face.unicodeRange}`;
   const frames = /** @type {{ __frames: Frame[] }} */ (/** @type {unknown} */ (window)).__frames;
   const entry = /** @type {(PerformanceEntry & { paintTime?: number }) | undefined} */ (
     performance.getEntriesByName("first-contentful-paint")[0]
@@ -209,9 +241,9 @@ function readPaint(revealMark) {
       const ranges = face.unicodeRange.split(",").map((range) => range.trim());
       const subset = face.unicodeRange === "U+0-10FFFF" ? "" : ` (${ranges[0]}${ranges.length > 1 ? ", ..." : ""})`;
       const stretch = face.stretch === "normal" ? "" : ` ${face.stretch}`;
-      return { key: key(face), name: `"${face.family} ${face.weight} ${face.style}${stretch}"${subset}`, status: face.status };
+      return { name: `"${face.family} ${face.weight} ${face.style}${stretch}"${subset}`, status: face.status };
     }),
-    loadingAtPaint: atPaint?.loading ?? null,
+    waitingAtPaint: atPaint?.waiting ?? null,
   };
 }
 
@@ -310,15 +342,15 @@ function problems(report) {
   );
   // A face can fail to decode without any failed request.
   const broken = report.faces.filter((face) => face.status === "error").map((face) => `font ${face.name} failed to load`);
-  if (report.loadingAtPaint === null) {
+  if (report.waitingAtPaint === null) {
     return [...report.failedLoads, ...late, ...broken, "no frame recorded at first paint"];
   }
-  // The paint needed a face that was still loading, and drew its text in a
-  // fallback. A face that had not started loading was not needed yet.
-  const loadingAtPaint = report.loadingAtPaint;
-  const lateFonts = report.faces
-    .filter((face) => loadingAtPaint.includes(face.key))
-    .map((face) => `font ${face.name} was not loaded at first paint (${paint} ms), so text painted in a fallback face`);
+  // Text that asked for a font the browser had not loaded painted in a
+  // fallback face.
+  const lateFonts = [...new Map(report.waitingAtPaint.map((entry) => [entry.name, entry])).values()].map(
+    (entry) =>
+      `font "${entry.name}" was not loaded at first paint (${paint} ms), so ${JSON.stringify(entry.text)} painted in a fallback face`,
+  );
   return [...report.failedLoads, ...late, ...broken, ...lateFonts];
 }
 
