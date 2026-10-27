@@ -1,0 +1,21 @@
+{
+  "name": "@kenn-io/first-paint",
+  "private": true,
+  "type": "module",
+  "description": "Fail when a page can paint before its stylesheets or fonts are in place.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "playwright": "1.64.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}
