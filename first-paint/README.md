@@ -11,14 +11,16 @@ stylesheet and font response for 600 ms, so any page that paints before a late
 request arrives paints first and fails. For each page it reports:
 
 - a stylesheet or font that returned an error or failed to load;
-- a stylesheet the page requested before its first contentful paint that
-  finished after it;
+- a stylesheet, or a stylesheet it imports, that the page requested before its
+  first contentful paint and that finished after it;
 - a font that failed to decode;
-- a font the page uses that had not loaded when the page first painted.
+- a font that was still loading in the frame that first painted, so its text
+  painted in a fallback face;
+- fonts still loading 5 seconds after first paint.
 
-The check ignores fonts the page declares but never uses, stylesheets for
-other media such as print, and stylesheets the page requests after its first
-paint, such as one a route loads on demand.
+The check follows redirects. It ignores fonts that had not started loading at
+first paint, stylesheets for other media such as print, and stylesheets the
+page requests after its first paint, such as one a route loads on demand.
 
 Firefox records no first contentful paint for some pages that the hold script
 below kept hidden. For those pages the check uses the time the script revealed

@@ -20,7 +20,12 @@
   setTimeout(show, 3000);
   const ready = async () => {
     const pending = [...document.querySelectorAll("link")]
-      .filter((link) => link.rel === "stylesheet" && !link.sheet)
+      .filter((link) => {
+        const rel = link.rel.toLowerCase().split(/\s+/);
+        return rel.includes("stylesheet") && !rel.includes("alternate");
+      })
+      // A disabled or print stylesheet does not style the screen.
+      .filter((link) => !link.disabled && matchMedia(link.media || "all").matches && !link.sheet)
       .map((link) => new Promise((done) => {
         link.addEventListener("load", done);
         link.addEventListener("error", done);

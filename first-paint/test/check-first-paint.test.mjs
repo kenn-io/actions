@@ -56,6 +56,24 @@ async function site(root, name, html, files = {}) {
   return dir;
 }
 
+/**
+ * Serves handler on a local port while check runs against its origin.
+ * @param {import("node:http").RequestListener} handler
+ * @param {(origin: string) => Promise<void>} check
+ */
+async function withServer(handler, check) {
+  const server = createServer(handler);
+  await new Promise((done) => server.listen(0, "127.0.0.1", () => done(undefined)));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === "object");
+  try {
+    await check(`http://127.0.0.1:${address.port}`);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+}
+
 describe("first-paint", () => {
   /** @type {string} */
   let root;
@@ -126,21 +144,43 @@ describe("first-paint", () => {
   it("checks pages a running server serves", async () => {
     const html = page(`<style>${fontFace("/font.woff2")}</style>`);
     const font = await readFile(FONT);
-    const server = createServer((req, res) => {
+    const handler = (/** @type {import("node:http").IncomingMessage} */ req, /** @type {import("node:http").ServerResponse} */ res) => {
       if (req.url === "/font.woff2") res.writeHead(200, { "content-type": "font/woff2" }).end(font);
       else res.writeHead(200, { "content-type": "text/html" }).end(html);
-    });
-    await new Promise((done) => server.listen(0, "127.0.0.1", () => done(undefined)));
-    const address = server.address();
-    assert.ok(address !== null && typeof address === "object");
-    try {
-      const url = `http://127.0.0.1:${address.port}/app/`;
+    };
+    await withServer(handler, async (origin) => {
+      const url = `${origin}/app/`;
       const result = await run(["--url", url, "--browser", "firefox"]);
       assert.equal(result.code, 1);
       assert.match(result.stderr, new RegExp(`^firefox ${url}: font "Fixture normal normal" was not loaded`, "m"));
-    } finally {
-      server.close();
-    }
+    });
+  });
+
+  it("follows a redirected stylesheet", async () => {
+    const html = page(`<link rel="stylesheet" href="/old.css">`);
+    const handler = (/** @type {import("node:http").IncomingMessage} */ req, /** @type {import("node:http").ServerResponse} */ res) => {
+      if (req.url === "/old.css") res.writeHead(301, { location: "/new.css" }).end();
+      else if (req.url === "/new.css") res.writeHead(200, { "content-type": "text/css" }).end("p { color: black; }");
+      else res.writeHead(200, { "content-type": "text/html" }).end(html);
+    };
+    await withServer(handler, async (origin) => {
+      const result = await run(["--url", `${origin}/`, "--browser", "firefox"]);
+      assert.equal(result.code, 0, result.stderr);
+    });
+  });
+
+  it("reports a font that never finishes loading", { timeout: 60000 }, async () => {
+    const script = `addEventListener("load", () => setTimeout(() => document.fonts.load("16px Fixture"), 50))`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>${fontFace("/stall.woff2")}</style><script>${script}</script></head><body><p>plain</p></body></html>`;
+    const handler = (/** @type {import("node:http").IncomingMessage} */ req, /** @type {import("node:http").ServerResponse} */ res) => {
+      // The font request never gets a response.
+      if (req.url !== "/stall.woff2") res.writeHead(200, { "content-type": "text/html" }).end(html);
+    };
+    await withServer(handler, async (origin) => {
+      const result = await run(["--url", `${origin}/`, "--browser", "firefox"]);
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, /: fonts were still loading 5 s after first paint$/m);
+    });
   });
 
   it("hides text that sets its own visibility until its font decodes", async () => {
@@ -214,6 +254,29 @@ describe("first-paint", () => {
     const result = await run(["--dist", dir, "--browser", "firefox"]);
     assert.equal(result.code, 1);
     assert.match(result.stderr, /^firefox \/: stylesheet \/%E0%A4%A\.css returned 400$/m);
+  });
+
+  it("checks a stylesheet a script imports before first paint", async () => {
+    const script = `const style = document.createElement("style"); style.textContent = "@import url(/late.css);"; document.head.append(style);`;
+    const dir = await site(root, "imported", page(`<script>${script}</script>`), { "late.css": "p { color: black; }" });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^firefox \/: stylesheet \/late\.css finished at \d+ ms, after first paint/m);
+  });
+
+  it("passes a page that shows text in a font it loads after first paint", async () => {
+    const script = `setTimeout(async () => { await document.fonts.load("16px Fixture"); document.body.insertAdjacentHTML("beforeend", ${JSON.stringify(BODY)}); }, 30)`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><h1>Heading</h1><script>${script}</script></body></html>`;
+    const dir = await site(root, "font-after-paint", html, { "site.css": fontFace("/font.woff2") });
+    const result = await run(["--dist", dir]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("holds the page for a stylesheet whose rel is not lower case", async () => {
+    const head = `<script>${hold}</script><link rel="Stylesheet " href="/site.css">`;
+    const dir = await site(root, "rel-case", page(head), { "site.css": fontFace(data) });
+    const result = await run(["--dist", dir, "--browser", "chromium"]);
+    assert.equal(result.code, 0, result.stderr);
   });
 
   it("rejects an unknown browser before loading anything", async () => {

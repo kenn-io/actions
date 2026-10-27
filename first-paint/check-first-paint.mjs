@@ -42,13 +42,13 @@ const CONTENT_TYPES = {
 };
 
 /**
- * @typedef {{ t: number, loaded: string[] }} Frame
+ * @typedef {{ t: number, loading: string[] }} Frame
  * @typedef {{
  *   failedLoads: string[],
  *   paint: number | null,
  *   lateSheets: { href: string, start: number, end: number }[],
  *   faces: { key: string, name: string, status: string }[],
- *   loadedAtPaint: string[],
+ *   loadingAtPaint: string[] | null,
  * }} PageReport
  */
 
@@ -121,7 +121,7 @@ function recordFrames() {
   const observer = new ResizeObserver(() => {
     frames.push({
       t: frameStart,
-      loaded: [...document.fonts].filter((face) => face.status === "loaded").map(key),
+      loading: [...document.fonts].filter((face) => face.status === "loading").map(key),
     });
   });
   /** @param {number} start */
@@ -171,8 +171,31 @@ function readPaint(revealMark) {
   // A stylesheet for other media, such as print, does not style the screen.
   // One requested after first paint, such as a route's stylesheet loaded on
   // demand, was not part of it.
+  /** @param {CSSStyleSheet} sheet */
+  const applies = (sheet) => !sheet.disabled && (sheet.media.length === 0 || matchMedia(sheet.media.mediaText).matches);
+  /**
+   * The sheet and every sheet its import rules pull in.
+   * @param {CSSStyleSheet} sheet
+   * @returns {CSSStyleSheet[]}
+   */
+  const withImports = (sheet) => {
+    let rules;
+    try {
+      rules = [...sheet.cssRules];
+    } catch (error) {
+      // A stylesheet from another origin hides its rules, imports included.
+      if (error instanceof DOMException && error.name === "SecurityError") return [sheet];
+      throw error;
+    }
+    return [
+      sheet,
+      ...rules.flatMap((rule) => (rule instanceof CSSImportRule && rule.styleSheet ? withImports(rule.styleSheet) : [])),
+    ];
+  };
   const lateSheets = [...document.styleSheets]
-    .filter((sheet) => !sheet.disabled && (sheet.media.length === 0 || matchMedia(sheet.media.mediaText).matches))
+    .filter(applies)
+    .flatMap(withImports)
+    .filter(applies)
     .flatMap((sheet) => (sheet.href ? [sheet.href] : []))
     .map((href) => {
       const timing = resources.find((resource) => resource.name === href);
@@ -188,7 +211,7 @@ function readPaint(revealMark) {
       const stretch = face.stretch === "normal" ? "" : ` ${face.stretch}`;
       return { key: key(face), name: `"${face.family} ${face.weight} ${face.style}${stretch}"${subset}`, status: face.status };
     }),
-    loadedAtPaint: atPaint?.loaded ?? [],
+    loadingAtPaint: atPaint?.loading ?? null,
   };
 }
 
@@ -210,7 +233,9 @@ async function inspect(browser, url, holdMs) {
   const held = new Set();
   context.on("response", (response) => {
     const request = response.request();
-    if (watched(request.resourceType()) && !response.ok()) {
+    // A redirect is judged by the response it leads to.
+    const redirect = response.status() >= 300 && response.status() < 400;
+    if (watched(request.resourceType()) && !response.ok() && !redirect) {
       failedLoads.push(`${request.resourceType()} ${new URL(request.url()).pathname} returned ${response.status()}`);
     }
   });
@@ -257,7 +282,13 @@ async function inspect(browser, url, holdMs) {
       await new Promise((done) => setTimeout(done, 100));
       if (held.size === 0) break;
     }
-    await page.evaluate(() => document.fonts.ready);
+    const fontsReady = await page.evaluate(() =>
+      Promise.race([
+        document.fonts.ready.then(() => true),
+        new Promise((done) => setTimeout(() => done(false), 5000)),
+      ]),
+    );
+    if (!fontsReady) throw new Error("fonts were still loading 5 s after first paint");
     return { failedLoads, ...(await page.evaluate(readPaint, REVEAL_MARK)) };
   } finally {
     await context.close();
@@ -279,10 +310,14 @@ function problems(report) {
   );
   // A face can fail to decode without any failed request.
   const broken = report.faces.filter((face) => face.status === "error").map((face) => `font ${face.name} failed to load`);
-  // Faces that never left "unloaded" were not needed by the page.
+  if (report.loadingAtPaint === null) {
+    return [...report.failedLoads, ...late, ...broken, "no frame recorded at first paint"];
+  }
+  // The paint needed a face that was still loading, and drew its text in a
+  // fallback. A face that had not started loading was not needed yet.
+  const loadingAtPaint = report.loadingAtPaint;
   const lateFonts = report.faces
-    .filter((face) => face.status === "loading" || face.status === "loaded")
-    .filter((face) => !report.loadedAtPaint.includes(face.key))
+    .filter((face) => loadingAtPaint.includes(face.key))
     .map((face) => `font ${face.name} was not loaded at first paint (${paint} ms), so text painted in a fallback face`);
   return [...report.failedLoads, ...late, ...broken, ...lateFonts];
 }
