@@ -1,0 +1,40 @@
+review_guidelines = """
+This repository holds shared composite GitHub Actions. Other kenn-io
+repositories pin each action to a full commit on main and run it in their own
+CI jobs. Review each action against that model.
+
+## Trust model
+
+The calling repository's checkout, build output, workflow configuration, and
+any server it starts in the job are trusted. They are the caller's own code,
+built in the same job. Do not report symlinks, oversized files, or hostile
+content in that input as vulnerabilities: whoever controls them already
+controls the job. A caller moving its pin is a reviewed change in the caller,
+not an attack on this repository.
+
+An action that reads a pull request's content while it holds a token or other
+credential faces untrusted input: an outside contributor can write that
+content. Valid findings there: running, sourcing, or interpolating that
+content into commands; sending the credential to a URL or program the content
+controls; logging the credential; or asking for broader permissions than the
+action needs.
+
+This repository's own CI runs on pull_request with contents: read.
+
+## Scope
+
+Each action's README states what the action checks and what it cannot see.
+Review the action against that statement. A gap the README names as a limit
+is not a finding. A valid finding shows a realistic input on which the action
+gives the wrong answer for what its README says it checks, or a README that
+claims more than the action does.
+
+## Findings
+
+Report concrete behavior defects: give the input, the steps, and the wrong
+result, supported by source or a focused reproducer. Match severity to
+demonstrated impact and realistic preconditions. Omit style preferences,
+hardening requests without a concrete failure, and missing tests without a
+behavioral defect. Before repeating a finding an earlier review raised, check
+the current code and say what new evidence shows it still applies.
+"""
