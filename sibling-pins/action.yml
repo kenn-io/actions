@@ -20,7 +20,6 @@ runs:
   using: composite
   steps:
     - name: Check pull request merge ref
-      id: merge
       if: startsWith(inputs.ref, 'refs/pull/') && endsWith(inputs.ref, '/merge')
       shell: bash
       env:
@@ -33,12 +32,11 @@ runs:
           ls-remote --exit-code "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$REF" || status=$?
         if [ "$status" -eq 2 ]; then
           echo '::notice title=Merge conflicts::This pull request conflicts with its base branch, so GitHub has no merge to check. Resolve the conflicts; that push runs this check, as does the merge queue.'
-          echo 'missing=true' >> "$GITHUB_OUTPUT"
+          exit 1
         fi
     # Only dependency files are checked out. The checker never runs code from
     # the candidate.
     - name: Checkout candidate dependency files
-      if: steps.merge.outputs.missing != 'true'
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         ref: ${{ inputs.ref }}
@@ -55,13 +53,11 @@ runs:
           /.github/workflows/
         sparse-checkout-cone-mode: false
     - name: Set up Go for the checker
-      if: steps.merge.outputs.missing != 'true'
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version-file: ${{ github.action_path }}/go.mod
         cache-dependency-path: ${{ github.action_path }}/go.sum
     - name: Check sibling pins
-      if: steps.merge.outputs.missing != 'true'
       shell: bash
       working-directory: ${{ github.action_path }}
       env:
