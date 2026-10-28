@@ -1,0 +1,52 @@
+review_guidelines = """
+This repository holds shared composite GitHub Actions. Other kenn-io
+repositories pin each action to a full commit on main and run it in their own
+CI jobs. Review each action against that model.
+
+## Trust model
+
+The calling repository's checkout, build output, workflow configuration, and
+any server it starts in the job are trusted. They are the caller's own code,
+built in the same job. Do not report symlinks, oversized files, or hostile
+HTML, CSS, or URLs in that input as vulnerabilities: whoever controls them
+already controls the job. A caller moving its pin is a reviewed change in the
+caller, not an attack on this repository.
+
+sibling-pins is the exception. It reads the candidate revision of a pull
+request, which an untrusted contributor can write, while it holds a token that
+may read private sibling repositories. Valid findings there: running, sourcing,
+or interpolating candidate content into commands; sending the token to a
+candidate-controlled URL or program; logging the token; or a token or job
+permission broader than contents read.
+
+This repository's own CI runs on pull_request with contents: read.
+
+## first-paint scope
+
+first-paint is a static check by design. It reads HTML and CSS and passes a
+page that meets three conditions: it inlines hold-first-paint.js in <head>
+before any stylesheet, matching the action's copy below any leading comment
+lines; it links each stylesheet with a plain <link rel="stylesheet"> in
+<head>; and every @font-face URL is a data: URL.
+
+Do not report that the check cannot see stylesheets or fonts a script adds at
+runtime, browser font matching or layout it does not model, or CSS a full
+parser would read differently. A valid finding shows a realistic page, of the
+kind Vite, Astro, SvelteKit, or Go templates produce, that passes while
+breaking one of the three conditions or fails while meeting all three.
+
+hold-first-paint.js runs inline in every page. A page that stays hidden up to
+the script's 3-second cap in a rare case, such as a stylesheet that errors
+before the script attaches its listeners, is an accepted cost. Report a case
+only if it hides a page longer than the cap, shows it before its stylesheets
+and fonts are ready in an ordinary case, or hides it without JavaScript.
+
+## Findings
+
+Report concrete behavior defects: give the input, the steps, and the wrong
+result, supported by source or a focused reproducer. Match severity to
+demonstrated impact and realistic preconditions. Omit style preferences,
+hardening requests without a concrete failure, and missing tests without a
+behavioral defect. Before repeating a finding an earlier review raised, check
+the current code and say what new evidence shows it still applies.
+"""
