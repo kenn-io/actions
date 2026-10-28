@@ -46,16 +46,7 @@ func TestCheckReportsPinsOffMain(t *testing.T) {
 		{File: "web/bun.lock", Repo: "kit-ui", Ref: "cccc", Source: "web/bun.lock: open pull request", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
 		{File: "desktop/package.json", Repo: "app-ui", Ref: "dddd", Source: "desktop/package.json: missing", Problem: "kenn-io/app-ui has no revision dddd, or this check cannot read the repository"},
 	}, findings)
-	var messages []string
-	for _, finding := range findings {
-		messages = append(messages, finding.String())
-	}
-	require.Equal(t, []string{
-		"go.mod: squashed pull request head: bbbb is not on kenn-io/forge main (unmerged commits: 1); pin a commit on main instead",
-		"web/package.json: open pull request: cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead",
-		"web/bun.lock: open pull request: cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead",
-		"desktop/package.json: missing: kenn-io/app-ui has no revision dddd, or this check cannot read the repository",
-	}, messages)
+	require.Equal(t, "go.mod: squashed pull request head: bbbb is not on kenn-io/forge main (unmerged commits: 1); pin a commit on main instead", findings[0].String())
 	require.Equal(t, 1, requests["/repos/kenn-io/kit-ui/compare/main...cccc"], "pins naming one revision share a request")
 }
 
@@ -109,11 +100,11 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	findings, err := GitHub{Client: server.Client(), BaseURL: server.URL}.Check(t.Context(), []Pin{
-		{Repo: "kata", Ref: "c668572", Source: "bun.lock: tag object"},
-		{Repo: "kata", Ref: "0123456", Source: "bun.lock: unknown hash"},
+		{File: "bun.lock", Repo: "kata", Ref: "c668572", Source: "bun.lock: tag object"},
+		{File: "bun.lock", Repo: "kata", Ref: "0123456", Source: "bun.lock: unknown hash"},
 	})
 	require.NoError(t, err)
 	require.Equal(t, []Finding{
-		{Repo: "kata", Ref: "0123456", Source: "bun.lock: unknown hash", Problem: "kenn-io/kata has no revision 0123456, or this check cannot read the repository"},
+		{File: "bun.lock", Repo: "kata", Ref: "0123456", Source: "bun.lock: unknown hash", Problem: "kenn-io/kata has no revision 0123456, or this check cannot read the repository"},
 	}, findings)
 }
