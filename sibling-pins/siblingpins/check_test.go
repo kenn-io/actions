@@ -46,6 +46,7 @@ func TestCheckReportsPinsOffMain(t *testing.T) {
 		{File: "web/bun.lock", Repo: "kit-ui", Ref: "cccc", Source: "web/bun.lock: open pull request", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
 		{File: "desktop/package.json", Repo: "app-ui", Ref: "dddd", Source: "desktop/package.json: missing", Problem: "kenn-io/app-ui has no revision dddd, or this check cannot read the repository"},
 	}, findings)
+	// Findings render the file, dependency, and problem for CLI output.
 	require.Equal(t, "go.mod: squashed pull request head: bbbb is not on kenn-io/forge main (unmerged commits: 1); pin a commit on main instead", findings[0].String())
 	require.Equal(t, 1, requests["/repos/kenn-io/kit-ui/compare/main...cccc"], "pins naming one revision share a request")
 }
@@ -63,7 +64,7 @@ func TestCheckRetriesServerErrors(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	findings, err := GitHub{Client: server.Client(), BaseURL: server.URL}.Check(t.Context(), []Pin{{Repo: "forge", Ref: "bbbb", Source: "go.mod"}})
+	findings, err := GitHub{Client: server.Client(), BaseURL: server.URL}.Check(t.Context(), []Pin{{File: "go.mod", Repo: "forge", Ref: "bbbb", Source: "go.mod"}})
 	require.NoError(t, err)
 	require.Len(t, findings, 1)
 	require.Equal(t, 2, calls)
@@ -76,7 +77,7 @@ func TestCheckFailsWhenGitHubRefuses(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	findings, err := GitHub{Client: server.Client(), BaseURL: server.URL}.Check(t.Context(), []Pin{{Repo: "forge", Ref: "aaaa", Source: "go.mod"}})
+	findings, err := GitHub{Client: server.Client(), BaseURL: server.URL}.Check(t.Context(), []Pin{{File: "go.mod", Repo: "forge", Ref: "aaaa", Source: "go.mod"}})
 	require.ErrorContains(t, err, "401")
 	require.Nil(t, findings)
 }
