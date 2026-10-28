@@ -16,6 +16,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "parse5": "8.0.1"
+    "parse5": "8.0.1",
+    "postcss": "8.5.31"
   }
 }

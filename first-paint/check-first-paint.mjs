@@ -9,10 +9,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parse } from "parse5";
+import postcss from "postcss";
 
 /** @typedef {import("parse5").DefaultTreeAdapterMap["element"]} Element */
 /** @typedef {import("parse5").DefaultTreeAdapterMap["node"]} Node */
-/** @typedef {(url: URL) => Promise<string | undefined>} Load */
+/** @typedef {(url: URL) => Promise<{ text: string, url: URL } | undefined>} Load */
 
 // Pages under --dist resolve against this origin, so relative and absolute
 // stylesheet URLs map onto files the way a server would serve them.
@@ -28,11 +29,11 @@ const code = (/** @type {string} */ script) => {
 
 const HOLD = code(await readFile(new URL("hold-first-paint.js", import.meta.url), "utf8"));
 
+// Template contents are inert, so the walk skips them.
 /** @param {Node} node @returns {Generator<Element>} */
 function* elements(node) {
   if ("tagName" in node) yield node;
-  const children = "content" in node ? node.content.childNodes : "childNodes" in node ? node.childNodes : [];
-  for (const child of children) yield* elements(child);
+  for (const child of "childNodes" in node ? node.childNodes : []) yield* elements(child);
 }
 
 const attr = (/** @type {Element} */ el, /** @type {string} */ name) =>
@@ -41,62 +42,82 @@ const attr = (/** @type {Element} */ el, /** @type {string} */ name) =>
 const text = (/** @type {Element} */ el) =>
   el.childNodes.map((child) => ("value" in child ? child.value : "")).join("");
 
-const isStylesheet = (/** @type {Element} */ el) => {
-  if (el.tagName !== "link") return false;
-  const rel = (attr(el, "rel") ?? "").toLowerCase().split(/\s+/);
-  return rel.includes("stylesheet") && !rel.includes("alternate");
-};
+const rel = (/** @type {Element} */ el) => (attr(el, "rel") ?? "").toLowerCase().split(/\s+/);
+
+const isStylesheet = (/** @type {Element} */ el) =>
+  el.tagName === "link" && rel(el).includes("stylesheet") && !rel(el).includes("alternate");
+
+// A classic script runs while the parser reaches it. A module, nomodule, or
+// non-JavaScript script would not hide the page before its first paint.
+const runsInline = (/** @type {Element} */ el) =>
+  el.tagName === "script" &&
+  attr(el, "src") === undefined &&
+  attr(el, "nomodule") === undefined &&
+  ["", "text/javascript", "application/javascript"].includes((attr(el, "type") ?? "").trim().toLowerCase());
 
 // A stylesheet a script swaps in after it loads, such as the media="print"
 // onload trick or a preload whose onload sets rel, never blocks first paint.
-const isSwapped = (/** @type {Element} */ el) => {
-  const rel = (attr(el, "rel") ?? "").toLowerCase().split(/\s+/);
-  const style = isStylesheet(el) || (rel.includes("preload") && attr(el, "as")?.toLowerCase() === "style");
-  return el.tagName === "link" && style && attr(el, "onload") !== undefined;
-};
+const isSwapped = (/** @type {Element} */ el) =>
+  el.tagName === "link" &&
+  attr(el, "onload") !== undefined &&
+  (isStylesheet(el) || (rel(el).includes("preload") && attr(el, "as")?.toLowerCase() === "style"));
 
 // A print-only stylesheet never styles the screen, so it cannot flash.
-const isPrint = (/** @type {Element} */ el) => (attr(el, "media") ?? "").trim().toLowerCase() === "print";
+const isPrint = (/** @type {string | undefined} */ media) => (media ?? "").trim().toLowerCase() === "print";
 
-const QUOTED = String.raw`(?:"([^"]*)"|'([^']*)')`;
 const URL_TOKEN = String.raw`url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)`;
-const firstGroup = (/** @type {RegExpMatchArray} */ match) => match.slice(1).find((group) => group !== undefined) ?? "";
+const QUOTED = String.raw`"([^"]*)"|'([^']*)'`;
+const IMPORT = new RegExp(String.raw`^\s*(?:${URL_TOKEN}|${QUOTED})(.*)$`, "is");
+const firstGroup = (/** @type {RegExpMatchArray} */ match) => match.slice(1, 6).find((group) => group !== undefined) ?? "";
 
 /**
  * Lists problems in one stylesheet and the stylesheets it imports.
- * @param {string} css @param {URL} base @param {Load} load @param {Set<string>} seen
+ * @param {string} css @param {URL} base @param {URL} page @param {Load} load @param {Set<string>} seen
  * @returns {Promise<string[]>}
  */
-async function checkCss(css, base, load, seen) {
+async function checkCss(css, base, page, load, seen) {
+  let root;
+  try {
+    root = postcss.parse(css);
+  } catch {
+    return [`stylesheet ${base.pathname} could not be parsed`];
+  }
   const problems = [];
-  const source = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  for (const [face] of source.matchAll(/@font-face\s*\{[^}]*\}/gi)) {
-    for (const match of face.matchAll(new RegExp(URL_TOKEN, "g"))) {
-      const url = firstGroup(match);
-      if (!url.startsWith("data:")) {
-        problems.push(`font ${url} in ${base.pathname} loads as a separate file; embed it as a data: URL`);
-      }
+  /** @type {URL[]} */
+  const imports = [];
+  root.walkAtRules((rule) => {
+    const name = rule.name.toLowerCase();
+    if (name === "font-face") {
+      rule.walkDecls(/^src$/i, (decl) => {
+        for (const match of decl.value.matchAll(new RegExp(URL_TOKEN, "gi"))) {
+          const url = firstGroup(match);
+          if (!/^data:/i.test(url)) {
+            problems.push(`font ${url} in ${base.pathname} loads as a separate file; embed it as a data: URL`);
+          }
+        }
+      });
+    } else if (name === "import") {
+      const match = rule.params.match(IMPORT);
+      if (match && !isPrint(match[6])) imports.push(new URL(firstGroup(match), base));
     }
-  }
-  for (const match of source.matchAll(new RegExp(String.raw`@import\s+(?:${URL_TOKEN}|${QUOTED})`, "gi"))) {
-    problems.push(...(await checkSheet(new URL(firstGroup(match), base), base, load, seen)));
-  }
+  });
+  for (const url of imports) problems.push(...(await checkSheet(url, page, load, seen)));
   return problems;
 }
 
 /**
- * @param {URL} url @param {URL} from @param {Load} load @param {Set<string>} seen
+ * @param {URL} url @param {URL} page @param {Load} load @param {Set<string>} seen
  * @returns {Promise<string[]>}
  */
-async function checkSheet(url, from, load, seen) {
-  if (url.origin !== from.origin) {
-    return [`stylesheet ${url.href} is on another origin; serve it with the site and embed its fonts`];
-  }
+async function checkSheet(url, page, load, seen) {
+  const elsewhere = `is on another origin; serve it with the site and embed its fonts`;
+  if (url.origin !== page.origin) return [`stylesheet ${url.href} ${elsewhere}`];
   if (seen.has(url.href)) return [];
   seen.add(url.href);
-  const css = await load(url);
-  if (css === undefined) return [`stylesheet ${url.pathname} was not found`];
-  return checkCss(css, url, load, seen);
+  const loaded = await load(url);
+  if (loaded === undefined) return [`stylesheet ${url.pathname} was not found`];
+  if (loaded.url.origin !== page.origin) return [`stylesheet ${url.pathname} redirects to ${loaded.url.href}, which ${elsewhere}`];
+  return checkCss(loaded.text, loaded.url, page, load, seen);
 }
 
 /**
@@ -109,23 +130,23 @@ export async function checkPage(html, page, load) {
   const all = [...elements(parse(html))];
   const head = all.find((el) => el.tagName === "head");
   const inHead = new Set(head ? elements(head) : []);
-  const hold = all.findIndex(
-    (el) => el.tagName === "script" && attr(el, "src") === undefined && inHead.has(el) && code(text(el)) === HOLD,
-  );
+  const baseHref = all.find((el) => el.tagName === "base" && attr(el, "href") !== undefined);
+  const base = baseHref ? new URL(attr(baseHref, "href") ?? "", page) : page;
+  const hold = all.findIndex((el) => runsInline(el) && inHead.has(el) && code(text(el)) === HOLD);
   /** @type {Set<string>} */
   const seen = new Set();
   let first = -1;
   for (const [index, el] of all.entries()) {
     if (isSwapped(el)) {
       problems.push(`stylesheet ${attr(el, "href") ?? ""} is swapped in by an onload handler; link it with a plain <link rel="stylesheet">`);
-    } else if (el.tagName === "style") {
+    } else if (el.tagName === "style" && !isPrint(attr(el, "media"))) {
       if (first === -1) first = index;
-      problems.push(...(await checkCss(text(el), page, load, seen)));
-    } else if (isStylesheet(el) && !isPrint(el)) {
+      problems.push(...(await checkCss(text(el), base, page, load, seen)));
+    } else if (isStylesheet(el) && !isPrint(attr(el, "media"))) {
       if (first === -1) first = index;
       const href = attr(el, "href") ?? "";
       if (!inHead.has(el)) problems.push(`stylesheet ${href} is outside <head>`);
-      problems.push(...(await checkSheet(new URL(href, page), page, load, seen)));
+      problems.push(...(await checkSheet(new URL(href, base), page, load, seen)));
     }
   }
   if (first !== -1 && hold === -1) {
@@ -139,7 +160,7 @@ export async function checkPage(html, page, load) {
 /** @type {Load} */
 async function fetchText(url) {
   const response = await fetch(url);
-  return response.ok ? response.text() : undefined;
+  return response.ok ? { text: await response.text(), url: new URL(response.url) } : undefined;
 }
 
 /**
@@ -156,7 +177,8 @@ export async function check({ dist, urls = [] }) {
     const load = async (url) => {
       const file = path.join(root, decodeURIComponent(url.pathname));
       if (path.relative(root, file).startsWith("..")) return undefined;
-      return readFile(file, "utf8").catch(() => undefined);
+      const text = await readFile(file, "utf8").catch(() => undefined);
+      return text === undefined ? undefined : { text, url };
     };
     const entries = await readdir(root, { recursive: true, withFileTypes: true });
     const files = entries
@@ -170,9 +192,8 @@ export async function check({ dist, urls = [] }) {
     }
   }
   for (const url of urls) {
-    const page = new URL(url);
-    const html = await fetchText(page);
-    const problems = html === undefined ? ["page returned an error"] : await checkPage(html, page, fetchText);
+    const loaded = await fetchText(new URL(url));
+    const problems = loaded === undefined ? ["page returned an error"] : await checkPage(loaded.text, loaded.url, fetchText);
     if (problems.length > 0) results.set(url, problems);
   }
   return results;
