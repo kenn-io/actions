@@ -1,4 +1,10 @@
-package main
+// Package siblingpins checks that every revision a repository pins from a sibling
+// kenn-io repository is on that repository's main branch. A pull request may
+// pin a sibling's pull request build while it is open, but main may not: a
+// squash merge never puts that commit on the sibling's main, and Go cannot
+// download a commit reachable only through a pull request ref.
+// Go programs call Collect and then GitHub.Check.
+package siblingpins
 
 import (
 	"errors"
@@ -40,6 +46,7 @@ func isSiblingModule(modulePath string) bool {
 
 // Pin is one sibling revision named by a repository file.
 type Pin struct {
+	File string // path relative to the scanned root
 	Repo string // repository name under Owner
 	Ref  string // commit (full or abbreviated) or tag
 	// Source names the file and dependency for messages, such as
@@ -88,6 +95,9 @@ func Collect(fsys fs.FS) ([]Pin, error) {
 			return err
 		}
 		found, problem := parse(name, data)
+		for i := range found {
+			found[i].File = name
+		}
 		pins = append(pins, found...)
 		if problem != nil {
 			problems = append(problems, problem)

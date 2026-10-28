@@ -62,6 +62,9 @@ jobs:
 - Keep the job name `Sibling pins on main`. The required status check matches
   that name.
 - Run the action in its own job. It installs its own Go version.
+- A pull request with no merge ref passes with a merge-conflicts notice. It
+  cannot merge until the conflicts are resolved; that push runs the check,
+  as does the merge queue.
 
 ### Private siblings
 
@@ -105,3 +108,6 @@ can read the pinned siblings:
 ```sh
 GH_TOKEN="$(gh auth token)" go run go.kenn.io/actions/sibling-pins@<commit> --root .
 ```
+
+Go programs can import `go.kenn.io/actions/sibling-pins/siblingpins`, call
+`Collect`, and pass the pins to `GitHub.Check` for structured findings.

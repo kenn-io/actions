@@ -1,4 +1,4 @@
-package main
+package siblingpins
 
 import (
 	"context"
@@ -29,13 +29,23 @@ type GitHub struct {
 	Token   string
 }
 
+// Finding describes a pin that is not on its sibling's main branch.
+type Finding struct {
+	Pin
+	Problem string
+}
+
+func (f Finding) String() string {
+	return f.Source + ": " + f.Problem
+}
+
 // Check reports each pin whose revision is not reachable from its
 // repository's main branch. Pins naming the same revision share one request.
 // The error reports failures to ask GitHub, not off-main pins.
-func (g GitHub) Check(ctx context.Context, pins []Pin) ([]string, error) {
+func (g GitHub) Check(ctx context.Context, pins []Pin) ([]Finding, error) {
 	type key struct{ repo, ref string }
 	verdicts := make(map[key]string)
-	var findings []string
+	var findings []Finding
 	for _, pin := range pins {
 		k := key{pin.Repo, pin.Ref}
 		problem, seen := verdicts[k]
@@ -48,7 +58,7 @@ func (g GitHub) Check(ctx context.Context, pins []Pin) ([]string, error) {
 			verdicts[k] = problem
 		}
 		if problem != "" {
-			findings = append(findings, fmt.Sprintf("%s: %s", pin.Source, problem))
+			findings = append(findings, Finding{Pin: pin, Problem: problem})
 		}
 	}
 	return findings, nil
