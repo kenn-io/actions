@@ -11,8 +11,8 @@ stylesheet and font response for 600 ms, so any page that paints before a late
 request arrives paints first and fails. For each page it reports:
 
 - a stylesheet or font that returned an error or failed to load;
-- a stylesheet, or a stylesheet it imports, that the page requested before its
-  first contentful paint and that finished after it;
+- a stylesheet, or a stylesheet it imports, that the page or an open shadow
+  root requested before its first contentful paint and that finished after it;
 - a stylesheet that has no resource timing entry, so its finish time is
   unknown;
 - a font that failed to decode;
@@ -21,8 +21,8 @@ request arrives paints first and fails. For each page it reports:
 - a stylesheet, font, or font load still unfinished 5 seconds after first
   paint.
 
-Text includes generated content, form field values and placeholders, and
-text in open shadow roots. For each text the check reads the first family in
+Text includes generated content, list markers, form field values and
+placeholders, and text in open shadow roots. For each text the check reads the first family in
 its font stack that an `@font-face` rule declares, and the characters the
 text draws after `text-transform`.
 

@@ -124,13 +124,22 @@ function recordFrames() {
     "200%": "ultra-expanded",
   };
   const KEYWORDS = new Set(Object.values(STRETCH));
-  // Input types that draw their value or placeholder as text.
-  const TEXT_INPUTS = new Set(["text", "search", "email", "url", "tel", "number", "submit", "button", "reset"]);
+  // Input types that draw their value or placeholder as text. A password
+  // field draws its value as mask dots, so only its placeholder counts.
+  const TEXT_INPUTS = new Set(["text", "search", "email", "url", "tel", "number", "submit", "button", "reset", "password"]);
+  // Counter styles whose markers the browser draws as digits.
+  const DIGIT_MARKERS = new Set(["decimal", "decimal-leading-zero"]);
   /** @type {Frame[]} */
   const frames = [];
   /** @type {{ __frames?: Frame[] }} */ (/** @type {unknown} */ (window)).__frames = frames;
   /** @param {string} name */
   const unquote = (name) => name.trim().replace(/^["']|["']$/g, "");
+  // The family names in a font-family list. A quoted name can hold a comma.
+  /** @param {string} list */
+  const families = (list) =>
+    [...list.matchAll(/"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^,"']+)/g)]
+      .map((match) => (match[1] ?? match[2] ?? match[3] ?? "").trim())
+      .filter(Boolean);
   /** @param {DOMRectList} rects */
   const onScreen = (rects) =>
     [...rects].some(
@@ -160,7 +169,8 @@ function recordFrames() {
   // at all during a block period.
   const waiting = () => {
     if (!document.body || !document.documentElement.checkVisibility({ opacityProperty: true })) return [];
-    const declared = new Set([...document.fonts].map((face) => unquote(face.family)));
+    // Family names match without regard to case.
+    const declared = new Map([...document.fonts].map((face) => [unquote(face.family).toLowerCase(), unquote(face.family)]));
     /** @type {Map<string, { font: string, name: string, chars: Set<string>, sample: string }>} */
     const fonts = new Map();
     /**
@@ -172,7 +182,8 @@ function recordFrames() {
       if (style.visibility !== "visible" || !raw.trim()) return;
       // The browser uses the first family in the list that has a face, so a
       // later family is only a fallback. A list without one uses system fonts.
-      const family = style.fontFamily.split(",").map(unquote).find((name) => declared.has(name));
+      const first = families(style.fontFamily).find((name) => declared.has(name.toLowerCase()));
+      const family = first === undefined ? undefined : declared.get(first.toLowerCase());
       if (family === undefined) return;
       const lang = element.closest("[lang]")?.getAttribute("lang") || undefined;
       // text-transform changes the characters drawn, and with them the
@@ -198,13 +209,24 @@ function recordFrames() {
       if (!element.checkVisibility({ opacityProperty: true }) || !onScreen(element.getClientRects())) return;
       for (const pseudo of ["::before", "::after"]) {
         const style = getComputedStyle(element, pseudo);
-        add(style, element, contentText(style.content));
+        // The element's checks above do not cover its pseudo-elements' own.
+        if (style.display !== "none" && style.opacity !== "0") add(style, element, contentText(style.content));
+      }
+      const own = getComputedStyle(element);
+      if (own.display.includes("list-item")) {
+        // A marker draws its content, else a string list style, else a counter.
+        const marker = getComputedStyle(element, "::marker");
+        const text =
+          contentText(marker.content) ||
+          contentText(own.listStyleType) ||
+          (DIGIT_MARKERS.has(own.listStyleType) ? "0123456789." : "");
+        add(marker, element, text);
       }
       const field =
         element instanceof HTMLTextAreaElement || (element instanceof HTMLInputElement && TEXT_INPUTS.has(element.type));
       if (!field) return;
-      if (element.value) add(getComputedStyle(element), element, element.value);
-      else add(getComputedStyle(element, "::placeholder"), element, element.placeholder);
+      if (!element.value) add(getComputedStyle(element, "::placeholder"), element, element.placeholder);
+      else if (element.type !== "password") add(own, element, element.value);
     };
     /** @param {Node} root */
     const walk = (root) => {
@@ -214,14 +236,18 @@ function recordFrames() {
             ? NodeFilter.FILTER_REJECT
             : NodeFilter.FILTER_ACCEPT,
       });
+      // The walker starts below its root, so the root's own generated
+      // content is visited here.
+      if (root instanceof Element) visit(root);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         if (node instanceof Element) {
           visit(node);
           // Open shadow roots render their own text, as web components do.
           if (node.shadowRoot) walk(node.shadowRoot);
-        } else if (node instanceof Text && node.parentElement && node.data.trim()) {
-          const parent = node.parentElement;
-          if (!withBox(parent).checkVisibility({ opacityProperty: true })) continue;
+        } else if (node instanceof Text && node.data.trim()) {
+          // Text placed directly in a shadow root inherits from its host.
+          const parent = node.parentNode instanceof ShadowRoot ? node.parentNode.host : node.parentElement;
+          if (!parent || !withBox(parent).checkVisibility({ opacityProperty: true })) continue;
           const range = document.createRange();
           range.selectNodeContents(node);
           if (onScreen(range.getClientRects())) add(getComputedStyle(parent), parent, node.data);
@@ -305,12 +331,29 @@ function readPaint(revealMark) {
       ...rules.flatMap((rule) => (rule instanceof CSSImportRule && rule.styleSheet && applies(rule.styleSheet) ? withImports(rule.styleSheet) : [])),
     ];
   };
+  // Open shadow roots, nested ones included, hold their own stylesheets.
+  /**
+   * @param {Document | ShadowRoot} root
+   * @returns {(Document | ShadowRoot)[]}
+   */
+  const roots = (root) => [
+    root,
+    ...[...root.querySelectorAll("*")].flatMap((element) => (element.shadowRoot ? roots(element.shadowRoot) : [])),
+  ];
+  // The same URL can also be fetched for another reason, so only requests a
+  // stylesheet link or import started count. The latest one is the sheet's.
+  /** @param {string} href */
+  const timingOf = (href) =>
+    resources
+      .filter((resource) => resource.name === href && (resource.initiatorType === "link" || resource.initiatorType === "css"))
+      .at(-1);
   // An imported sheet for other media is skipped with everything it imports.
-  const sheets = [...document.styleSheets]
+  const sheets = roots(document)
+    .flatMap((root) => [...root.styleSheets])
     .filter(applies)
     .flatMap(withImports)
     .flatMap((sheet) => (sheet.href ? [sheet.href] : []))
-    .map((href) => ({ href, timing: resources.find((resource) => resource.name === href) }));
+    .map((href) => ({ href, timing: timingOf(href) }));
   const lateSheets = sheets
     .flatMap(({ href, timing }) => (timing ? [{ href, start: timing.startTime, end: timing.responseEnd }] : []))
     .filter((sheet) => paint === null || (sheet.start < paint && sheet.end > paint));

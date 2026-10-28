@@ -301,6 +301,13 @@ describe("first-paint", () => {
     ["a placeholder", "input::placeholder { font-family: Fixture; }", `<input placeholder="Search">`],
     ["a shadow root", "", `<div id="host"></div><script>document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = '<p style="font-family: Fixture">Shadow text</p>'</script>`],
     ["a display: contents element", "", `<div style="display: contents; font-family: Fixture">Contents text</div>`],
+    ["the body's generated content", "body::before { content: 'Icon'; font-family: Fixture; }", ""],
+    ["a shadow root's own text", "", `<div id="host" style="font-family: Fixture"></div><script>document.getElementById("host").attachShadow({ mode: "open" }).textContent = "Shadow text"</script>`],
+    ["a password placeholder", "input::placeholder { font-family: Fixture; }", `<input type="password" placeholder="Password">`],
+    ["a string list marker", "ul { list-style-type: '* '; } li::marker { font-family: Fixture; }", "<ul><li>Item</li></ul>"],
+    ["a numbered list marker", "li::marker { font-family: Fixture; }", "<ol><li>Item</li></ol>"],
+    ["a family whose name holds a comma", '@font-face { font-family: "Comma, Face"; src: url("/font.woff2") format("woff2"); } p { font-family: "Comma, Face"; }', "<p>Comma text</p>"],
+    ["a family written in other case", "", `<p style="font-family: fixture">Case text</p>`],
   ];
   for (const [name, css, body] of sources) {
     it(`checks text in ${name}`, async () => {
@@ -308,9 +315,37 @@ describe("first-paint", () => {
       const dir = await site(root, `source-${name.replaceAll(/\W/g, "-")}`, html, { "site.css": `${fontFace("/font.woff2")} ${css}` });
       const result = await run(["--dist", dir, "--browser", "firefox"]);
       assert.equal(result.code, 1);
-      assert.match(result.stderr, /^firefox \/: font "Fixture 400 normal" was not loaded at first paint/m);
+      assert.match(result.stderr, /^firefox \/: font "(Fixture|Comma, Face) 400 normal" was not loaded at first paint/m);
     });
   }
+
+  for (const hidden of ["display: none", "opacity: 0"]) {
+    it(`ignores generated content with ${hidden}`, async () => {
+      const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p>Plain</p></body></html>`;
+      const css = `${fontFace("/font.woff2")} p::before { content: "Icon"; font-family: Fixture; ${hidden}; }`;
+      const dir = await site(root, `hidden-pseudo-${hidden.replaceAll(/\W/g, "-")}`, html, { "site.css": css });
+      const result = await run(["--dist", dir, "--browser", "firefox"]);
+      assert.equal(result.code, 0, result.stderr);
+    });
+  }
+
+  it("checks a stylesheet linked in a shadow root", async () => {
+    const script = `document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = '<link rel="stylesheet" href="/shadow.css"><p>Shadow text</p>'`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><p>Plain</p><div id="host"></div><script>${script}</script></body></html>`;
+    const dir = await site(root, "shadow-sheet", html, { "shadow.css": "p { color: red; }" });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^firefox \/: stylesheet \/shadow\.css finished at \d+ ms, after first paint/m);
+  });
+
+  it("times a stylesheet by its own request when a script fetched the same URL first", async () => {
+    // The busy script delays first paint until the fetch has finished.
+    const head = `<script>fetch("/site.css")</script><script>const until = performance.now() + 400; while (performance.now() < until);</script><link rel="stylesheet" href="/site.css" media="print" onload="this.media='all'">`;
+    const dir = await site(root, "fetched-sheet", page(head), { "site.css": "p { color: red; }" });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^firefox \/: stylesheet \/site\.css finished at \d+ ms, after first paint/m);
+  });
 
   it("ignores text below the first screen", async () => {
     const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p>Plain</p><p style="margin-top: 3000px; font-family: Fixture">Far below</p></body></html>`;
