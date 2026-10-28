@@ -9,7 +9,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parse } from "parse5";
-import postcss from "postcss";
+import postcss, { AtRule, Container } from "postcss";
 
 /** @typedef {import("parse5").DefaultTreeAdapterMap["element"]} Element */
 /** @typedef {import("parse5").DefaultTreeAdapterMap["node"]} Node */
@@ -55,15 +55,31 @@ const runsInline = (/** @type {Element} */ el) =>
   attr(el, "nomodule") === undefined &&
   ["", "text/javascript", "application/javascript"].includes((attr(el, "type") ?? "").trim().toLowerCase());
 
+// A print-only stylesheet never styles the screen, so it cannot flash. Every
+// query in the list has to be for print.
+const isPrint = (/** @type {string | undefined} */ media) =>
+  (media ?? "").split(",").every((query) => /^\s*(?:only\s+)?print(?:\s+and\b.*)?$/is.test(query));
+
 // A stylesheet a script swaps in after it loads, such as the media="print"
 // onload trick or a preload whose onload sets rel, never blocks first paint.
-const isSwapped = (/** @type {Element} */ el) =>
-  el.tagName === "link" &&
-  attr(el, "onload") !== undefined &&
-  (isStylesheet(el) || (rel(el).includes("preload") && attr(el, "as")?.toLowerCase() === "style"));
+// An onload handler on a stylesheet that already styles the screen, such as
+// one that records a performance mark, does not change that.
+const isSwapped = (/** @type {Element} */ el) => {
+  if (el.tagName !== "link" || attr(el, "onload") === undefined) return false;
+  const screen = ["", "all", "screen"].includes((attr(el, "media") ?? "").trim().toLowerCase());
+  return (isStylesheet(el) && !screen) || (rel(el).includes("preload") && attr(el, "as")?.toLowerCase() === "style");
+};
 
-// A print-only stylesheet never styles the screen, so it cannot flash.
-const isPrint = (/** @type {string | undefined} */ media) => (media ?? "").trim().toLowerCase() === "print";
+/** @param {AtRule} rule */
+const inPrintMedia = (rule) => {
+  /** @type {unknown} */
+  let node = rule.parent;
+  while (node instanceof Container) {
+    if (node instanceof AtRule && node.name.toLowerCase() === "media" && isPrint(node.params)) return true;
+    node = node.parent;
+  }
+  return false;
+};
 
 const URL_TOKEN = String.raw`url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)`;
 const QUOTED = String.raw`"([^"]*)"|'([^']*)'`;
@@ -72,10 +88,13 @@ const firstGroup = (/** @type {RegExpMatchArray} */ match) => match.slice(1, 6).
 
 /**
  * Lists problems in one stylesheet and the stylesheets it imports.
+ * An inline <style> that imports a stylesheet fails: the hold script waits only
+ * for <link> stylesheets, so it would show the page before the import loads.
  * @param {string} css @param {URL} base @param {URL} page @param {Load} load @param {Set<string>} seen
+ * @param {boolean} [inline]
  * @returns {Promise<string[]>}
  */
-async function checkCss(css, base, page, load, seen) {
+async function checkCss(css, base, page, load, seen, inline = false) {
   let root;
   try {
     root = postcss.parse(css);
@@ -87,7 +106,7 @@ async function checkCss(css, base, page, load, seen) {
   const imports = [];
   root.walkAtRules((rule) => {
     const name = rule.name.toLowerCase();
-    if (name === "font-face") {
+    if (name === "font-face" && !inPrintMedia(rule)) {
       rule.walkDecls(/^src$/i, (decl) => {
         for (const match of decl.value.matchAll(new RegExp(URL_TOKEN, "gi"))) {
           const url = firstGroup(match);
@@ -98,7 +117,13 @@ async function checkCss(css, base, page, load, seen) {
       });
     } else if (name === "import") {
       const match = rule.params.match(IMPORT);
-      if (match && !isPrint(match[6])) imports.push(new URL(firstGroup(match), base));
+      if (!match || isPrint(match[6])) return;
+      const url = new URL(firstGroup(match), base);
+      if (inline) {
+        problems.push(`an inline <style> imports ${url.pathname}; move the import into a linked stylesheet`);
+      } else {
+        imports.push(url);
+      }
     }
   });
   for (const url of imports) problems.push(...(await checkSheet(url, page, load, seen)));
@@ -141,7 +166,7 @@ export async function checkPage(html, page, load) {
       problems.push(`stylesheet ${attr(el, "href") ?? ""} is swapped in by an onload handler; link it with a plain <link rel="stylesheet">`);
     } else if (el.tagName === "style" && !isPrint(attr(el, "media"))) {
       if (first === -1) first = index;
-      problems.push(...(await checkCss(text(el), base, page, load, seen)));
+      problems.push(...(await checkCss(text(el), base, page, load, seen, true)));
     } else if (isStylesheet(el) && !isPrint(attr(el, "media"))) {
       if (first === -1) first = index;
       const href = attr(el, "href") ?? "";

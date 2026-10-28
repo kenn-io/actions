@@ -32,9 +32,11 @@ test("a page that holds its first paint and embeds its fonts passes", async () =
         holdScript,
         `<link rel="stylesheet" href="site.css"><link rel="stylesheet" media="print" href="/print.css">`,
         `<style media="print">@font-face { src: url(/print.woff2); }</style>`,
+        `<link rel="stylesheet" media="only print and (orientation: landscape)" href="/print.css">`,
+        `<link rel="stylesheet" href="/base.css" onload="performance.mark('css')">`,
       ].join(""),
     }),
-    "site.css": `@import "base.css"; @import url(print.css) print; ${EMBEDDED} p::before { content: "@import 'gone.css'"; }`,
+    "site.css": `@import "base.css"; @import url(print.css) print; ${EMBEDDED} p::before { content: "@import 'gone.css'"; } @media print { @font-face { font-family: P; src: url(/p.woff2); } }`,
     "base.css": `/* @font-face { src: url(late.woff2) } */ @font-face { font-family: Base; src: URL('DATA:font/woff2;base64,AAAA'); }`,
     "print.css": `@font-face { font-family: Print; src: url(/print.woff2); }`,
   });
@@ -84,6 +86,16 @@ const broken = [
     name: "a stylesheet swapped in on load",
     head: `${holdScript}<link rel="stylesheet" href="/site.css" media="print" onload="this.media='all'">`,
     expect: /onload/,
+  },
+  {
+    name: "a stylesheet with media none swapped in on load",
+    head: `${holdScript}<link rel="stylesheet" href="/site.css" media="none" onload="this.media='all'">`,
+    expect: /onload/,
+  },
+  {
+    name: "an inline style that imports a stylesheet",
+    head: `${holdScript}<style>@import "site.css";</style>`,
+    expect: /inline <style> imports \/site\.css/,
   },
   {
     name: "a preload swapped in on load",

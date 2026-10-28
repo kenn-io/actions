@@ -20,14 +20,17 @@ three things:
    script's hash in that policy.
 2. **Links each stylesheet with a plain `<link rel="stylesheet">` in `<head>`.**
    A stylesheet in `<body>`, or one a script swaps in after it loads, such as
-   the `media="print"` `onload` trick, does not block first paint.
+   the `media="print"` `onload` trick, does not block first paint. An inline
+   `<style>` cannot `@import` a stylesheet, since the hold script waits only
+   for `<link>` stylesheets.
 3. **Embeds every font in its stylesheets as a `data:` URL.** A font in a
    separate file is discovered only after the stylesheet is parsed, so the
    browser paints before the font arrives. The check follows `@import` and reads
    inline `<style>` too. A stylesheet on another origin, such as a font
    service's, fails, since its fonts are separate files.
 
-A page with no stylesheets passes. Print-only stylesheets are skipped.
+A page with no stylesheets passes. Print-only stylesheets and `@media print`
+rules are skipped.
 
 The check cannot see a stylesheet or font that a script adds at runtime, such
 as one a route loads on demand.
