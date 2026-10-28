@@ -179,7 +179,7 @@ describe("first-paint", () => {
     await withServer(handler, async (origin) => {
       const result = await run(["--url", `${origin}/`, "--browser", "firefox"]);
       assert.equal(result.code, 1);
-      assert.match(result.stderr, /: fonts were still loading 5 s after first paint$/m);
+      assert.match(result.stderr, /^firefox [^ ]+: font \/stall\.woff2 was still loading 5 s after first paint$/m);
     });
   });
 
@@ -285,6 +285,81 @@ describe("first-paint", () => {
     const dir = await site(root, "rel-case", page(head), { "site.css": fontFace(data) });
     const result = await run(["--dist", dir, "--browser", "chromium"]);
     assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("passes text whose first family is loaded while a later one is not", async () => {
+    const css = `${fontFace(data)} @font-face { font-family: Later; src: url("/font.woff2") format("woff2"); }`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p style="font-family: Fixture, Later">The quick brown fox</p></body></html>`;
+    const dir = await site(root, "family-list", html, { "site.css": css });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  /** @type {[string, string, string][]} */
+  const sources = [
+    ["generated content", "p::before { content: 'Icon'; font-family: Fixture; }", "<p></p>"],
+    ["a placeholder", "input::placeholder { font-family: Fixture; }", `<input placeholder="Search">`],
+    ["a shadow root", "", `<div id="host"></div><script>document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = '<p style="font-family: Fixture">Shadow text</p>'</script>`],
+    ["a display: contents element", "", `<div style="display: contents; font-family: Fixture">Contents text</div>`],
+  ];
+  for (const [name, css, body] of sources) {
+    it(`checks text in ${name}`, async () => {
+      const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body>${body}</body></html>`;
+      const dir = await site(root, `source-${name.replaceAll(/\W/g, "-")}`, html, { "site.css": `${fontFace("/font.woff2")} ${css}` });
+      const result = await run(["--dist", dir, "--browser", "firefox"]);
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, /^firefox \/: font "Fixture 400 normal" was not loaded at first paint/m);
+    });
+  }
+
+  it("ignores text below the first screen", async () => {
+    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p>Plain</p><p style="margin-top: 3000px; font-family: Fixture">Far below</p></body></html>`;
+    const dir = await site(root, "below-fold", html, { "site.css": fontFace("/font.woff2") });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("checks every character a long text uses", async () => {
+    const css = `@font-face { font-family: Fixture; src: url("${data}") format("woff2"); unicode-range: U+0000-00FF; } @font-face { font-family: Fixture; src: url("/font.woff2") format("woff2"); unicode-range: U+0400-04FF; }`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p style="font-family: Fixture">${"<span>a </span>".repeat(2100)}<span>Ж</span></p></body></html>`;
+    const dir = await site(root, "long-text", html, { "site.css": css });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^firefox \/: font "Fixture 400 normal" was not loaded at first paint/m);
+  });
+
+  // Firefox decodes the embedded uppercase subset before first paint, and
+  // the text draws only uppercase letters.
+  it("checks the characters text-transform draws", async () => {
+    const css = `@font-face { font-family: Fixture; src: url("${data}") format("woff2"); unicode-range: U+0041-005A; } @font-face { font-family: Fixture; src: url("/font.woff2") format("woff2"); unicode-range: U+0061-007A; }`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p style="font-family: Fixture; text-transform: uppercase">quiet</p></body></html>`;
+    const dir = await site(root, "uppercase", html, { "site.css": css });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("times a stylesheet requested after hundreds of other requests", async () => {
+    const images = Array.from({ length: 300 }, (_, i) => `<img src="/img-${i}.png" alt="">`).join("");
+    const script = `addEventListener("load", () => { const link = document.createElement("link"); link.rel = "stylesheet"; link.href = "/route.css"; document.head.append(link); })`;
+    const dir = await site(root, "many-requests", page(`<script>${script}</script>`).replace("</body>", `${images}</body>`), {
+      "route.css": "p { color: black; }",
+    });
+    const result = await run(["--dist", dir, "--browser", "firefox"]);
+    assert.equal(result.code, 0, result.stderr);
+  });
+
+  it("reports a stylesheet that never finishes loading", { timeout: 60000 }, async () => {
+    const script = `addEventListener("load", () => { const link = document.createElement("link"); link.rel = "stylesheet"; link.href = "/stall.css"; document.head.append(link); })`;
+    const html = page(`<script>${script}</script>`);
+    const handler = (/** @type {import("node:http").IncomingMessage} */ req, /** @type {import("node:http").ServerResponse} */ res) => {
+      // The stylesheet request never gets a response.
+      if (req.url !== "/stall.css") res.writeHead(200, { "content-type": "text/html" }).end(html);
+    };
+    await withServer(handler, async (origin) => {
+      const result = await run(["--url", `${origin}/`, "--browser", "firefox"]);
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, /^firefox [^ ]+: stylesheet \/stall\.css was still loading 5 s after first paint$/m);
+    });
   });
 
   it("rejects an unknown browser before loading anything", async () => {

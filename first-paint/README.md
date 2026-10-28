@@ -13,14 +13,23 @@ request arrives paints first and fails. For each page it reports:
 - a stylesheet or font that returned an error or failed to load;
 - a stylesheet, or a stylesheet it imports, that the page requested before its
   first contentful paint and that finished after it;
+- a stylesheet that has no resource timing entry, so its finish time is
+  unknown;
 - a font that failed to decode;
-- visible text whose font had not loaded in the frame that first painted, so
-  the text painted in a fallback face;
-- fonts still loading 5 seconds after first paint.
+- text on the first screen whose font had not loaded in the frame that first
+  painted, so the text painted in a fallback face or not at all;
+- a stylesheet, font, or font load still unfinished 5 seconds after first
+  paint.
+
+Text includes generated content, form field values and placeholders, and
+text in open shadow roots. For each text the check reads the first family in
+its font stack that an `@font-face` rule declares, and the characters the
+text draws after `text-transform`.
 
 The check follows redirects. It ignores fonts no visible text used at first
-paint, stylesheets for other media such as print, and stylesheets the
-page requests after its first paint, such as one a route loads on demand.
+paint, text below the first screen, stylesheets for other media such as print,
+and stylesheets the page requests after its first paint, such as one a route
+loads on demand.
 
 Firefox records no first contentful paint for some pages that the hold script
 below kept hidden. For those pages the check uses the time the script revealed

@@ -48,6 +48,7 @@ const CONTENT_TYPES = {
  *   failedLoads: string[],
  *   paint: number | null,
  *   lateSheets: { href: string, start: number, end: number }[],
+ *   untimedSheets: string[],
  *   faces: { name: string, status: string }[],
  *   waitingAtPaint: Waiting[] | null,
  * }} PageReport
@@ -105,6 +106,9 @@ function serve(root) {
 
 // Runs in the page before any of its own content.
 function recordFrames() {
+  // A page with many requests would otherwise drop resource timing entries
+  // past the browser's default of 250.
+  performance.setResourceTimingBufferSize(100000);
   // The font shorthand that document.fonts.check() takes accepts font-stretch
   // only as a keyword, and Chromium computes it as a percentage.
   /** @type {Record<string, string>} */
@@ -120,35 +124,114 @@ function recordFrames() {
     "200%": "ultra-expanded",
   };
   const KEYWORDS = new Set(Object.values(STRETCH));
-  const shown = { opacityProperty: true, visibilityProperty: true };
+  // Input types that draw their value or placeholder as text.
+  const TEXT_INPUTS = new Set(["text", "search", "email", "url", "tel", "number", "submit", "button", "reset"]);
   /** @type {Frame[]} */
   const frames = [];
   /** @type {{ __frames?: Frame[] }} */ (/** @type {unknown} */ (window)).__frames = frames;
-  // Lists the fonts that visible text asks for and the browser has not loaded
-  // for that text, so the frame draws it in a fallback face.
+  /** @param {string} name */
+  const unquote = (name) => name.trim().replace(/^["']|["']$/g, "");
+  /** @param {DOMRectList} rects */
+  const onScreen = (rects) =>
+    [...rects].some(
+      (rect) =>
+        rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight,
+    );
+  // An element with display: contents has no box, so opacity and display
+  // are judged on the nearest ancestor that has one.
+  /** @param {Element} element */
+  const withBox = (element) => {
+    let current = element;
+    while (current.parentElement && getComputedStyle(current).display === "contents") current = current.parentElement;
+    return current;
+  };
+  // The strings in a computed content value, such as an icon font's glyph.
+  /** @param {string} content */
+  const contentText = (content) =>
+    [...content.matchAll(/"((?:[^"\\]|\\.)*)"/g)]
+      .map((match) =>
+        (match[1] ?? "")
+          .replace(/\\([0-9a-fA-F]{1,6}) ?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+          .replace(/\\(.)/g, "$1"),
+      )
+      .join("");
+  // Lists the fonts that text on screen asks for and the browser has not
+  // loaded for that text, so the frame draws it in a fallback face, or not
+  // at all during a block period.
   const waiting = () => {
-    if (!document.body || !document.documentElement.checkVisibility(shown)) return [];
-    /** @type {Map<string, { font: string, name: string, text: string }>} */
+    if (!document.body || !document.documentElement.checkVisibility({ opacityProperty: true })) return [];
+    const declared = new Set([...document.fonts].map((face) => unquote(face.family)));
+    /** @type {Map<string, { font: string, name: string, chars: Set<string>, sample: string }>} */
     const fonts = new Map();
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const text = node.textContent?.trim();
-      const element = node.parentElement;
-      if (!text || !element?.checkVisibility(shown)) continue;
-      const style = getComputedStyle(element);
+    /**
+     * @param {CSSStyleDeclaration} style
+     * @param {Element} element
+     * @param {string} raw
+     */
+    const add = (style, element, raw) => {
+      if (style.visibility !== "visible" || !raw.trim()) return;
+      // The browser uses the first family in the list that has a face, so a
+      // later family is only a fallback. A list without one uses system fonts.
+      const family = style.fontFamily.split(",").map(unquote).find((name) => declared.has(name));
+      if (family === undefined) return;
+      const lang = element.closest("[lang]")?.getAttribute("lang") || undefined;
+      // text-transform changes the characters drawn, and with them the
+      // unicode-range subset they need.
+      const text =
+        style.textTransform === "uppercase"
+          ? raw.toLocaleUpperCase(lang)
+          : style.textTransform === "lowercase"
+            ? raw.toLocaleLowerCase(lang)
+            : style.textTransform === "capitalize"
+              ? raw.replace(/(^|\s)(\S)/gu, (_, space, letter) => space + letter.toLocaleUpperCase(lang))
+              : raw;
       const stretch = STRETCH[style.fontStretch] ?? style.fontStretch;
       const keyword = KEYWORDS.has(stretch) ? stretch : "normal";
-      const font = `${style.fontStyle} ${style.fontWeight} ${keyword} ${style.fontSize} ${style.fontFamily}`;
-      const family = (style.fontFamily.split(",")[0] ?? "").trim().replace(/^["']|["']$/g, "");
+      const font = `${style.fontStyle} ${style.fontWeight} ${keyword} ${style.fontSize} ${JSON.stringify(family)}`;
       const name = `${family} ${style.fontWeight} ${style.fontStyle}${keyword === "normal" ? "" : ` ${keyword}`}`;
-      const entry = fonts.get(font) ?? { font, name, text: "" };
-      // A sample of each font's text is enough to pick its unicode ranges.
-      if (entry.text.length < 2000) entry.text += text;
+      const entry = fonts.get(font) ?? { font, name, chars: new Set(), sample: text.trim().slice(0, 40) };
+      for (const char of text) if (char.trim()) entry.chars.add(char);
       fonts.set(font, entry);
-    }
+    };
+    /** @param {Element} element */
+    const visit = (element) => {
+      if (!element.checkVisibility({ opacityProperty: true }) || !onScreen(element.getClientRects())) return;
+      for (const pseudo of ["::before", "::after"]) {
+        const style = getComputedStyle(element, pseudo);
+        add(style, element, contentText(style.content));
+      }
+      const field =
+        element instanceof HTMLTextAreaElement || (element instanceof HTMLInputElement && TEXT_INPUTS.has(element.type));
+      if (!field) return;
+      if (element.value) add(getComputedStyle(element), element, element.value);
+      else add(getComputedStyle(element, "::placeholder"), element, element.placeholder);
+    };
+    /** @param {Node} root */
+    const walk = (root) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) =>
+          node instanceof Element && getComputedStyle(node).display === "none"
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT,
+      });
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node instanceof Element) {
+          visit(node);
+          // Open shadow roots render their own text, as web components do.
+          if (node.shadowRoot) walk(node.shadowRoot);
+        } else if (node instanceof Text && node.parentElement && node.data.trim()) {
+          const parent = node.parentElement;
+          if (!withBox(parent).checkVisibility({ opacityProperty: true })) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          if (onScreen(range.getClientRects())) add(getComputedStyle(parent), parent, node.data);
+        }
+      }
+    };
+    walk(document.body);
     return [...fonts.values()]
-      .filter((entry) => !document.fonts.check(entry.font, entry.text))
-      .map((entry) => ({ name: entry.name, text: entry.text.slice(0, 40) }));
+      .filter((entry) => !document.fonts.check(entry.font, [...entry.chars].join("")))
+      .map((entry) => ({ name: entry.name, text: entry.sample }));
   };
   // Resize observers run after the frame's animation frame callbacks and its
   // style and layout, just before it paints. By then the page's own callbacks
@@ -219,22 +302,23 @@ function readPaint(revealMark) {
     }
     return [
       sheet,
-      ...rules.flatMap((rule) => (rule instanceof CSSImportRule && rule.styleSheet ? withImports(rule.styleSheet) : [])),
+      ...rules.flatMap((rule) => (rule instanceof CSSImportRule && rule.styleSheet && applies(rule.styleSheet) ? withImports(rule.styleSheet) : [])),
     ];
   };
-  const lateSheets = [...document.styleSheets]
+  // An imported sheet for other media is skipped with everything it imports.
+  const sheets = [...document.styleSheets]
     .filter(applies)
     .flatMap(withImports)
-    .filter(applies)
     .flatMap((sheet) => (sheet.href ? [sheet.href] : []))
-    .map((href) => {
-      const timing = resources.find((resource) => resource.name === href);
-      return { href, start: timing?.startTime ?? 0, end: timing?.responseEnd ?? Infinity };
-    })
+    .map((href) => ({ href, timing: resources.find((resource) => resource.name === href) }));
+  const lateSheets = sheets
+    .flatMap(({ href, timing }) => (timing ? [{ href, start: timing.startTime, end: timing.responseEnd }] : []))
     .filter((sheet) => paint === null || (sheet.start < paint && sheet.end > paint));
+  const untimedSheets = sheets.flatMap(({ href, timing }) => (timing ? [] : [href]));
   return {
     paint,
     lateSheets,
+    untimedSheets,
     faces: [...document.fonts].map((face) => {
       const ranges = face.unicodeRange.split(",").map((range) => range.trim());
       const subset = face.unicodeRange === "U+0-10FFFF" ? "" : ` (${ranges[0]}${ranges.length > 1 ? ", ..." : ""})`;
@@ -312,13 +396,22 @@ async function inspect(browser, url, holdMs) {
       await new Promise((done) => setTimeout(done, 100));
       if (held.size === 0) break;
     }
+    // A request still open here may be one the first paint waited on.
+    const stalled = [...held];
+    failedLoads.push(
+      ...stalled.map(
+        (request) => `${request.resourceType()} ${new URL(request.url()).pathname} was still loading 5 s after first paint`,
+      ),
+    );
     const fontsReady = await page.evaluate(() =>
       Promise.race([
         document.fonts.ready.then(() => true),
         new Promise((done) => setTimeout(() => done(false), 5000)),
       ]),
     );
-    if (!fontsReady) throw new Error("fonts were still loading 5 s after first paint");
+    if (!fontsReady && !stalled.some((request) => request.resourceType() === "font")) {
+      failedLoads.push("fonts were still loading 5 s after first paint");
+    }
     return { failedLoads, ...(await page.evaluate(readPaint, REVEAL_MARK)) };
   } finally {
     await context.close();
@@ -338,18 +431,21 @@ function problems(report) {
     (sheet) =>
       `stylesheet ${new URL(sheet.href).pathname} finished at ${Math.round(sheet.end)} ms, after first paint at ${paint} ms`,
   );
+  const untimed = report.untimedSheets.map(
+    (href) => `stylesheet ${new URL(href).pathname} has no resource timing entry, so its finish time is unknown`,
+  );
   // A face can fail to decode without any failed request.
   const broken = report.faces.filter((face) => face.status === "error").map((face) => `font ${face.name} failed to load`);
   if (report.waitingAtPaint === null) {
-    return [...report.failedLoads, ...late, ...broken, "no frame recorded at first paint"];
+    return [...report.failedLoads, ...late, ...untimed, ...broken, "no frame recorded at first paint"];
   }
   // Text that asked for a font the browser had not loaded painted in a
   // fallback face.
   const lateFonts = [...new Map(report.waitingAtPaint.map((entry) => [entry.name, entry])).values()].map(
     (entry) =>
-      `font "${entry.name}" was not loaded at first paint (${paint} ms), so ${JSON.stringify(entry.text)} painted in a fallback face`,
+      `font "${entry.name}" was not loaded at first paint (${paint} ms), so ${JSON.stringify(entry.text)} painted in a fallback face or not at all`,
   );
-  return [...report.failedLoads, ...late, ...broken, ...lateFonts];
+  return [...report.failedLoads, ...late, ...untimed, ...broken, ...lateFonts];
 }
 
 /**
