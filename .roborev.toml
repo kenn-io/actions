@@ -8,38 +8,26 @@ CI jobs. Review each action against that model.
 The calling repository's checkout, build output, workflow configuration, and
 any server it starts in the job are trusted. They are the caller's own code,
 built in the same job. Do not report symlinks, oversized files, or hostile
-HTML, CSS, or URLs in that input as vulnerabilities: whoever controls them
-already controls the job. A caller moving its pin is a reviewed change in the
-caller, not an attack on this repository.
+content in that input as vulnerabilities: whoever controls them already
+controls the job. A caller moving its pin is a reviewed change in the caller,
+not an attack on this repository.
 
-sibling-pins is the exception. It reads the candidate revision of a pull
-request, which an untrusted contributor can write, while it holds a token that
-may read private sibling repositories. Valid findings there: running, sourcing,
-or interpolating candidate content into commands; sending the token to a
-candidate-controlled URL or program; logging the token; or a token or job
-permission broader than contents read.
+An action that reads a pull request's content while it holds a token or other
+credential faces untrusted input: an outside contributor can write that
+content. Valid findings there: running, sourcing, or interpolating that
+content into commands; sending the credential to a URL or program the content
+controls; logging the credential; or asking for broader permissions than the
+action needs.
 
 This repository's own CI runs on pull_request with contents: read.
 
-## first-paint scope
+## Scope
 
-first-paint is a static check by design. It reads HTML and CSS and passes a
-page that meets three conditions: it inlines hold-first-paint.js in <head>
-before any stylesheet, matching the action's copy below any leading comment
-lines; it links each stylesheet with a plain <link rel="stylesheet"> in
-<head>; and every @font-face URL is a data: URL.
-
-Do not report that the check cannot see stylesheets or fonts a script adds at
-runtime, browser font matching or layout it does not model, or CSS a full
-parser would read differently. A valid finding shows a realistic page, of the
-kind Vite, Astro, SvelteKit, or Go templates produce, that passes while
-breaking one of the three conditions or fails while meeting all three.
-
-hold-first-paint.js runs inline in every page. A page that stays hidden up to
-the script's 3-second cap in a rare case, such as a stylesheet that errors
-before the script attaches its listeners, is an accepted cost. Report a case
-only if it hides a page longer than the cap, shows it before its stylesheets
-and fonts are ready in an ordinary case, or hides it without JavaScript.
+Each action's README states what the action checks and what it cannot see.
+Review the action against that statement. A gap the README names as a limit
+is not a finding. A valid finding shows a realistic input on which the action
+gives the wrong answer for what its README says it checks, or a README that
+claims more than the action does.
 
 ## Findings
 
