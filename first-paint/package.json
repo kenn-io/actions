@@ -11,11 +11,11 @@
     "test": "node --test test/*.test.mjs",
     "typecheck": "tsc -p ."
   },
-  "dependencies": {
-    "playwright": "1.64.1"
-  },
   "devDependencies": {
     "@types/node": "24.19.2",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "parse5": "8.0.1"
   }
 }

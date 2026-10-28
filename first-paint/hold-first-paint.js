@@ -12,9 +12,6 @@
     if (shown) return;
     shown = true;
     root.style.opacity = opacity;
-    // The first-paint check reads this mark when a browser records no first
-    // contentful paint for the page.
-    performance.mark("hold-first-paint");
   };
   // Never hide the page longer than a browser blocks text on a slow font.
   setTimeout(show, 3000);

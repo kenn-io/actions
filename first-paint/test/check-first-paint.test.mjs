@@ -1,405 +1,101 @@
 // @ts-check
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import path from "node:path";
+import { test } from "node:test";
+import { promisify } from "node:util";
+import { check } from "../check-first-paint.mjs";
 
-const CLI = new URL("../check-first-paint.mjs", import.meta.url).pathname;
-const FONT = new URL("fixtures/ibm-plex-mono-400.woff2", import.meta.url).pathname;
-const HOLD = new URL("../hold-first-paint.js", import.meta.url).pathname;
-const BODY = `<p style="font-family: Fixture, monospace">The quick brown fox</p>`;
+const CHECK = new URL("../check-first-paint.mjs", import.meta.url).pathname;
+const HOLD = await readFile(new URL("../hold-first-paint.js", import.meta.url), "utf8");
+const EMBEDDED = `@font-face { font-family: Face; src: url("data:font/woff2;base64,AAAA") format("woff2"); }`;
+const holdScript = `<script>// A copy for this site.\n${HOLD}</script>`;
 
-/**
- * @param {string} head
- * @returns {string}
- */
-const page = (head) => `<!doctype html><html><head><meta charset="utf-8">${head}</head><body>${BODY}</body></html>`;
+/** @param {{ head?: string, body?: string }} page */
+const html = ({ head = `${holdScript}<link rel="stylesheet" href="/site.css">`, body = "<p>Text</p>" }) =>
+  `<!doctype html><html><head><meta charset="utf-8">${head}</head><body>${body}</body></html>`;
 
-/**
- * @param {string} src
- * @returns {string}
- */
-const fontFace = (src) => `@font-face { font-family: Fixture; font-display: swap; src: url("${src}") format("woff2"); }`;
-
-/**
- * Runs the checker and collects its output.
- * @param {string[]} args
- * @returns {Promise<{ code: number | null, stdout: string, stderr: string }>}
- */
-function run(args) {
-  return new Promise((done) => {
-    const child = spawn(process.execPath, [CLI, ...args]);
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += chunk));
-    child.stderr.on("data", (chunk) => (stderr += chunk));
-    child.on("close", (code) => done({ code, stdout, stderr }));
-  });
-}
-
-/**
- * Writes a site with one page and the given extra files.
- * @param {string} root
- * @param {string} name
- * @param {string} html
- * @param {Record<string, string>} files
- * @returns {Promise<string>}
- */
-async function site(root, name, html, files = {}) {
-  const dir = join(root, name);
-  await cp(FONT, join(dir, "font.woff2"));
-  await writeFile(join(dir, "index.html"), html);
-  await Promise.all(Object.entries(files).map(([file, body]) => writeFile(join(dir, file), body)));
+/** @param {Record<string, string>} files */
+async function site(files) {
+  const dir = await mkdtemp(path.join(tmpdir(), "first-paint-"));
+  for (const [name, content] of Object.entries(files)) await writeFile(path.join(dir, name), content);
   return dir;
 }
 
-/**
- * Serves handler on a local port while check runs against its origin.
- * @param {import("node:http").RequestListener} handler
- * @param {(origin: string) => Promise<void>} check
- */
-async function withServer(handler, check) {
-  const server = createServer(handler);
-  await new Promise((done) => server.listen(0, "127.0.0.1", () => done(undefined)));
-  const address = server.address();
-  assert.ok(address !== null && typeof address === "object");
-  try {
-    await check(`http://127.0.0.1:${address.port}`);
-  } finally {
-    server.closeAllConnections();
-    server.close();
-  }
+test("a page that holds its first paint and embeds its fonts passes", async () => {
+  const dist = await site({
+    "index.html": html({
+      head: `${holdScript}<link rel="stylesheet" href="site.css"><link rel="stylesheet" media="print" href="/print.css">`,
+    }),
+    "site.css": `@import "base.css"; ${EMBEDDED}`,
+    "base.css": `/* @font-face { src: url(late.woff2) } */ @font-face { font-family: Base; src: url('data:font/woff2;base64,AAAA'); }`,
+    "print.css": `@font-face { font-family: Print; src: url(/print.woff2); }`,
+  });
+  assert.deepEqual(await check({ dist }), new Map());
+});
+
+test("a page with no stylesheets needs no hold script", async () => {
+  const dist = await site({ "index.html": html({ head: "" }) });
+  assert.deepEqual(await check({ dist }), new Map());
+});
+
+const broken = [
+  { name: "no hold script", head: `<link rel="stylesheet" href="/site.css">`, expect: /does not inline/ },
+  {
+    name: "an edited hold script",
+    head: `${holdScript.replace("3000", "9000")}<link rel="stylesheet" href="/site.css">`,
+    expect: /does not inline/,
+  },
+  { name: "hold script after a stylesheet", head: `<link rel="stylesheet" href="/site.css">${holdScript}`, expect: /comes after/ },
+  { name: "hold script after an inline style", head: `<style>p {}</style>${holdScript}`, expect: /comes after/ },
+  { name: "a font file", css: `@font-face { font-family: Face; src: url(/face.woff2) format("woff2"); }`, expect: /\/face\.woff2 .*separate file/ },
+  { name: "a font file in an imported stylesheet", css: `@import url("fonts.css");`, fonts: `@font-face { src: url(face.woff2); }`, expect: /face\.woff2 in \/fonts\.css/ },
+  { name: "a font file in an inline style", head: `${holdScript}<style>@font-face { src: url(face.woff2); }</style>`, expect: /separate file/ },
+  {
+    name: "a stylesheet swapped in on load",
+    head: `${holdScript}<link rel="stylesheet" href="/site.css" media="print" onload="this.media='all'">`,
+    expect: /onload/,
+  },
+  {
+    name: "a preload swapped in on load",
+    head: `${holdScript}<link rel="preload" as="style" href="/site.css" onload="this.rel='stylesheet'">`,
+    expect: /onload/,
+  },
+  { name: "a stylesheet in the body", body: `<link rel="stylesheet" href="/site.css">`, head: holdScript, expect: /outside <head>/ },
+  { name: "a stylesheet on another origin", head: `${holdScript}<link rel="stylesheet" href="https://fonts.example/css">`, expect: /another origin/ },
+  { name: "a missing stylesheet", head: `${holdScript}<link rel="stylesheet" href="/gone.css">`, expect: /not found/ },
+];
+
+for (const { name, head, body, css = EMBEDDED, fonts = "", expect } of broken) {
+  test(`a page fails with ${name}`, async () => {
+    const dist = await site({ "index.html": html({ head, body }), "site.css": css, "fonts.css": fonts });
+    const problems = (await check({ dist })).get("index.html") ?? [];
+    assert.match(problems.join("\n"), expect);
+  });
 }
 
-describe("first-paint", () => {
-  /** @type {string} */
-  let root;
-  /** @type {string} */
-  let embedded;
-  /** @type {string} */
-  let held;
-  /** @type {string} */
-  let data;
-  /** @type {string} */
-  let hold;
-
-  before(async () => {
-    root = await mkdtemp(join(tmpdir(), "first-paint-"));
-    data = `data:font/woff2;base64,${(await readFile(FONT)).toString("base64")}`;
-    embedded = await site(root, "embedded", page(`<link rel="stylesheet" href="/site.css">`), {
-      "site.css": fontFace(data),
-    });
-    // Embeds its font and inlines the hold script, as the README tells a UI to do.
-    hold = await readFile(HOLD, "utf8");
-    held = await site(root, "held", page(`<script>${hold}</script><link rel="stylesheet" href="/site.css">`), {
-      "site.css": fontFace(data),
-    });
+test("pages a server renders are checked over HTTP", async (t) => {
+  const pages = {
+    "/": html({}),
+    "/site.css": `@font-face { src: url(/face.woff2); }`,
+  };
+  const server = createServer((request, response) => {
+    const body = pages[/** @type {keyof typeof pages} */ (request.url ?? "")];
+    response.writeHead(body === undefined ? 404 : 200).end(body);
   });
+  await new Promise((done) => server.listen(0, "127.0.0.1", () => done(undefined)));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const url = `http://127.0.0.1:${address.port}/`;
+  assert.match((await check({ urls: [url] })).get(url)?.join("\n") ?? "", /face\.woff2 .*separate file/);
+});
 
-  after(() => rm(root, { recursive: true, force: true }));
-
-  it("passes a page that embeds its font and waits for it to decode", async () => {
-    const result = await run(["--dist", held]);
-    assert.equal(result.code, 0, result.stderr);
-    assert.match(result.stdout, /1 page\(s\) paint .* in firefox and chromium/);
-  });
-
-  // Firefox decodes an embedded font before its first paint; Chromium paints
-  // one frame first.
-  it("passes an embedded font in Firefox and fails it in Chromium", async () => {
-    const result = await run(["--dist", embedded]);
-    assert.equal(result.code, 1);
-    assert.doesNotMatch(result.stderr, /^firefox /m);
-    assert.match(result.stderr, /^chromium \/: font "Fixture 400 normal" was not loaded at first paint/m);
-  });
-
-  it("fails a page whose font is a separate request, in both browsers", async () => {
-    const dir = await site(root, "linked-font", page(`<link rel="stylesheet" href="/site.css">`), {
-      "site.css": fontFace("/font.woff2"),
-    });
-    const result = await run(["--dist", dir]);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: font "Fixture 400 normal" was not loaded at first paint/m);
-    assert.match(result.stderr, /^chromium \/: font "Fixture 400 normal" was not loaded at first paint/m);
-  });
-
-  it("fails a page whose stylesheet does not block rendering", async () => {
-    const head = `<link rel="stylesheet" href="/site.css" media="print" onload="this.media='all'">`;
-    const dir = await site(root, "async-sheet", page(head), { "site.css": "p { color: red; }" });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: stylesheet \/site\.css finished at \d+ ms, after first paint/m);
-  });
-
-  it("fails a page whose stylesheet is missing", async () => {
-    const dir = await site(root, "missing-sheet", page(`<link rel="stylesheet" href="/gone.css">`));
-    const result = await run(["--dist", dir, "--browser", "chromium"]);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^chromium \/: stylesheet \/gone\.css returned 404$/m);
-  });
-
-  it("checks pages a running server serves", async () => {
-    const html = page(`<style>${fontFace("/font.woff2")}</style>`);
-    const font = await readFile(FONT);
-    const handler = (/** @type {import("node:http").IncomingMessage} */ req, /** @type {import("node:http").ServerResponse} */ res) => {
-      if (req.url === "/font.woff2") res.writeHead(200, { "content-type": "font/woff2" }).end(font);
-      else res.writeHead(200, { "content-type": "text/html" }).end(html);
-    };
-    await withServer(handler, async (origin) => {
-      const url = `${origin}/app/`;
-      const result = await run(["--url", url, "--browser", "firefox"]);
-      assert.equal(result.code, 1);
-      assert.match(result.stderr, new RegExp(`^firefox ${url}: font "Fixture 400 normal" was not loaded`, "m"));
-    });
-  });
-
-  it("follows a redirected stylesheet", async () => {
-    const html = page(`<link rel="stylesheet" href="/old.css">`);
-    const handler = (/** @type {import("node:http").IncomingMessage} */ req, /** @type {import("node:http").ServerResponse} */ res) => {
-      if (req.url === "/old.css") res.writeHead(301, { location: "/new.css" }).end();
-      else if (req.url === "/new.css") res.writeHead(200, { "content-type": "text/css" }).end("p { color: black; }");
-      else res.writeHead(200, { "content-type": "text/html" }).end(html);
-    };
-    await withServer(handler, async (origin) => {
-      const result = await run(["--url", `${origin}/`, "--browser", "firefox"]);
-      assert.equal(result.code, 0, result.stderr);
-    });
-  });
-
-  it("reports a font that never finishes loading", { timeout: 60000 }, async () => {
-    const script = `addEventListener("load", () => setTimeout(() => document.fonts.load("16px Fixture"), 50))`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><style>${fontFace("/stall.woff2")}</style><script>${script}</script></head><body><p>plain</p></body></html>`;
-    const handler = (/** @type {import("node:http").IncomingMessage} */ req, /** @type {import("node:http").ServerResponse} */ res) => {
-      // The font request never gets a response.
-      if (req.url !== "/stall.woff2") res.writeHead(200, { "content-type": "text/html" }).end(html);
-    };
-    await withServer(handler, async (origin) => {
-      const result = await run(["--url", `${origin}/`, "--browser", "firefox"]);
-      assert.equal(result.code, 1);
-      assert.match(result.stderr, /^firefox [^ ]+: font \/stall\.woff2 was still loading 5 s after first paint$/m);
-    });
-  });
-
-  it("hides text that sets its own visibility until its font decodes", async () => {
-    const text = `<p style="font-family: Fixture, monospace; visibility: visible">The quick brown fox</p>`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><script>${hold}</script><link rel="stylesheet" href="/site.css"></head><body>${text}</body></html>`;
-    const dir = await site(root, "visible-text", html, { "site.css": fontFace(data) });
-    const result = await run(["--dist", dir, "--browser", "chromium"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  // Firefox records no first contentful paint for this page, so the check
-  // uses the time the hold script revealed it.
-  it("passes a held page that scrolls before it is shown", async () => {
-    const items = Array.from({ length: 9 }, (_, i) => `<p id="p${i}">${i}</p>`).join("");
-    const body = `<div style="height: 100px; overflow: auto; font-family: Fixture">${items}</div><script>document.getElementById("p8").scrollIntoView()</script>`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><script>${hold}</script><link rel="stylesheet" href="/site.css"></head><body>${body}</body></html>`;
-    const dir = await site(root, "scrolled", html, { "site.css": fontFace(data) });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("checks a face of one stretch apart from the same face in another", async () => {
-    const css = `${fontFace(data)} @font-face { font-family: Fixture; font-stretch: condensed; src: url("/font.woff2") format("woff2"); }`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p style="font-family: Fixture">Normal</p><p style="font-family: Fixture; font-stretch: condensed">Condensed</p></body></html>`;
-    const dir = await site(root, "stretch", html, { "site.css": css });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: font "Fixture 400 normal condensed" was not loaded at first paint/m);
-  });
-
-  it("passes a page that loads its font before it first shows text", async () => {
-    const script = `setTimeout(async () => { await document.fonts.load("16px Fixture"); document.body.innerHTML = ${JSON.stringify(BODY)}; }, 1500)`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><script>${script}</script></body></html>`;
-    const dir = await site(root, "late-text", html, { "site.css": fontFace("/font.woff2") });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("passes a page whose animation frame adds a loaded font with its text", async () => {
-    const script = `const face = new FontFace("Fixture", "url(${data})"); face.load().then(() => requestAnimationFrame(() => { document.fonts.add(face); document.body.innerHTML = ${JSON.stringify(BODY)}; }));`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><script>${script}</script></body></html>`;
-    const dir = await site(root, "added-face", html);
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("ignores a stylesheet for other media", async () => {
-    const dir = await site(root, "print-sheet", page(`<link rel="stylesheet" href="/print.css" media="print">`), {
-      "print.css": "p { color: black; }",
-    });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("ignores a stylesheet the page requests after its first paint", async () => {
-    const script = `new PerformanceObserver(() => { const link = document.createElement("link"); link.rel = "stylesheet"; link.href = "/route.css"; document.head.append(link); }).observe({ type: "paint" })`;
-    const dir = await site(root, "route-sheet", page(`<script>${script}</script>`), { "route.css": "p { color: black; }" });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("checks a page whose file name needs URL encoding", async () => {
-    const dir = await site(root, "encoded", page(""), { "a#b.html": page("") });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-    assert.match(result.stdout, /^2 page\(s\)/);
-  });
-
-  it("reports a request with a malformed path", async () => {
-    const dir = await site(root, "malformed", page(`<link rel="stylesheet" href="/%E0%A4%A.css">`));
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: stylesheet \/%E0%A4%A\.css returned 400$/m);
-  });
-
-  it("checks a stylesheet a script imports before first paint", async () => {
-    const script = `const style = document.createElement("style"); style.textContent = "@import url(/late.css);"; document.head.append(style);`;
-    const dir = await site(root, "imported", page(`<script>${script}</script>`), { "late.css": "p { color: black; }" });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: stylesheet \/late\.css finished at \d+ ms, after first paint/m);
-  });
-
-  it("passes a page that shows text in a font it loads after first paint", async () => {
-    const script = `setTimeout(async () => { await document.fonts.load("16px Fixture"); document.body.insertAdjacentHTML("beforeend", ${JSON.stringify(BODY)}); }, 30)`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><h1>Heading</h1><script>${script}</script></body></html>`;
-    const dir = await site(root, "font-after-paint", html, { "site.css": fontFace("/font.woff2") });
-    const result = await run(["--dist", dir]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("passes a page that starts loading its font before first paint and shows its text after", async () => {
-    const script = `document.fonts.load("16px Fixture").then(() => document.body.insertAdjacentHTML("beforeend", ${JSON.stringify(BODY)}))`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"><script>${script}</script></head><body><h1>Heading</h1></body></html>`;
-    const dir = await site(root, "preloaded-font", html, { "site.css": fontFace("/font.woff2") });
-    const result = await run(["--dist", dir]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("holds the page for a stylesheet whose rel is not lower case", async () => {
-    const head = `<script>${hold}</script><link rel="Stylesheet " href="/site.css">`;
-    const dir = await site(root, "rel-case", page(head), { "site.css": fontFace(data) });
-    const result = await run(["--dist", dir, "--browser", "chromium"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("passes text whose first family is loaded while a later one is not", async () => {
-    const css = `${fontFace(data)} @font-face { font-family: Later; src: url("/font.woff2") format("woff2"); }`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p style="font-family: Fixture, Later">The quick brown fox</p></body></html>`;
-    const dir = await site(root, "family-list", html, { "site.css": css });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  /** @type {[string, string, string][]} */
-  const sources = [
-    ["generated content", "p::before { content: 'Icon'; font-family: Fixture; }", "<p></p>"],
-    ["a placeholder", "input::placeholder { font-family: Fixture; }", `<input placeholder="Search">`],
-    ["a shadow root", "", `<div id="host"></div><script>document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = '<p style="font-family: Fixture">Shadow text</p>'</script>`],
-    ["a display: contents element", "", `<div style="display: contents; font-family: Fixture">Contents text</div>`],
-    ["the body's generated content", "body::before { content: 'Icon'; font-family: Fixture; }", ""],
-    ["a shadow root's own text", "", `<div id="host" style="font-family: Fixture"></div><script>document.getElementById("host").attachShadow({ mode: "open" }).textContent = "Shadow text"</script>`],
-    ["a password placeholder", "input::placeholder { font-family: Fixture; }", `<input type="password" placeholder="Password">`],
-    ["a string list marker", "ul { list-style-type: '* '; } li::marker { font-family: Fixture; }", "<ul><li>Item</li></ul>"],
-    ["a numbered list marker", "li::marker { font-family: Fixture; }", "<ol><li>Item</li></ol>"],
-    ["a family whose name holds a comma", '@font-face { font-family: "Comma, Face"; src: url("/font.woff2") format("woff2"); } p { font-family: "Comma, Face"; }', "<p>Comma text</p>"],
-    ["a family written in other case", "", `<p style="font-family: fixture">Case text</p>`],
-  ];
-  for (const [name, css, body] of sources) {
-    it(`checks text in ${name}`, async () => {
-      const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body>${body}</body></html>`;
-      const dir = await site(root, `source-${name.replaceAll(/\W/g, "-")}`, html, { "site.css": `${fontFace("/font.woff2")} ${css}` });
-      const result = await run(["--dist", dir, "--browser", "firefox"]);
-      assert.equal(result.code, 1);
-      assert.match(result.stderr, /^firefox \/: font "(Fixture|Comma, Face) 400 normal" was not loaded at first paint/m);
-    });
-  }
-
-  for (const hidden of ["display: none", "opacity: 0"]) {
-    it(`ignores generated content with ${hidden}`, async () => {
-      const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p>Plain</p></body></html>`;
-      const css = `${fontFace("/font.woff2")} p::before { content: "Icon"; font-family: Fixture; ${hidden}; }`;
-      const dir = await site(root, `hidden-pseudo-${hidden.replaceAll(/\W/g, "-")}`, html, { "site.css": css });
-      const result = await run(["--dist", dir, "--browser", "firefox"]);
-      assert.equal(result.code, 0, result.stderr);
-    });
-  }
-
-  it("checks a stylesheet linked in a shadow root", async () => {
-    const script = `document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = '<link rel="stylesheet" href="/shadow.css"><p>Shadow text</p>'`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><p>Plain</p><div id="host"></div><script>${script}</script></body></html>`;
-    const dir = await site(root, "shadow-sheet", html, { "shadow.css": "p { color: red; }" });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: stylesheet \/shadow\.css finished at \d+ ms, after first paint/m);
-  });
-
-  it("times a stylesheet by its own request when a script fetched the same URL first", async () => {
-    // The busy script delays first paint until the fetch has finished.
-    const head = `<script>fetch("/site.css")</script><script>const until = performance.now() + 400; while (performance.now() < until);</script><link rel="stylesheet" href="/site.css" media="print" onload="this.media='all'">`;
-    const dir = await site(root, "fetched-sheet", page(head), { "site.css": "p { color: red; }" });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: stylesheet \/site\.css finished at \d+ ms, after first paint/m);
-  });
-
-  it("ignores text below the first screen", async () => {
-    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p>Plain</p><p style="margin-top: 3000px; font-family: Fixture">Far below</p></body></html>`;
-    const dir = await site(root, "below-fold", html, { "site.css": fontFace("/font.woff2") });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("checks every character a long text uses", async () => {
-    const css = `@font-face { font-family: Fixture; src: url("${data}") format("woff2"); unicode-range: U+0000-00FF; } @font-face { font-family: Fixture; src: url("/font.woff2") format("woff2"); unicode-range: U+0400-04FF; }`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p style="font-family: Fixture">${"<span>a </span>".repeat(2100)}<span>Ж</span></p></body></html>`;
-    const dir = await site(root, "long-text", html, { "site.css": css });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /^firefox \/: font "Fixture 400 normal" was not loaded at first paint/m);
-  });
-
-  // Firefox decodes the embedded uppercase subset before first paint, and
-  // the text draws only uppercase letters.
-  it("checks the characters text-transform draws", async () => {
-    const css = `@font-face { font-family: Fixture; src: url("${data}") format("woff2"); unicode-range: U+0041-005A; } @font-face { font-family: Fixture; src: url("/font.woff2") format("woff2"); unicode-range: U+0061-007A; }`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/site.css"></head><body><p style="font-family: Fixture; text-transform: uppercase">quiet</p></body></html>`;
-    const dir = await site(root, "uppercase", html, { "site.css": css });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("times a stylesheet requested after hundreds of other requests", async () => {
-    const images = Array.from({ length: 300 }, (_, i) => `<img src="/img-${i}.png" alt="">`).join("");
-    const script = `addEventListener("load", () => { const link = document.createElement("link"); link.rel = "stylesheet"; link.href = "/route.css"; document.head.append(link); })`;
-    const dir = await site(root, "many-requests", page(`<script>${script}</script>`).replace("</body>", `${images}</body>`), {
-      "route.css": "p { color: black; }",
-    });
-    const result = await run(["--dist", dir, "--browser", "firefox"]);
-    assert.equal(result.code, 0, result.stderr);
-  });
-
-  it("reports a stylesheet that never finishes loading", { timeout: 60000 }, async () => {
-    const script = `addEventListener("load", () => { const link = document.createElement("link"); link.rel = "stylesheet"; link.href = "/stall.css"; document.head.append(link); })`;
-    const html = page(`<script>${script}</script>`);
-    const handler = (/** @type {import("node:http").IncomingMessage} */ req, /** @type {import("node:http").ServerResponse} */ res) => {
-      // The stylesheet request never gets a response.
-      if (req.url !== "/stall.css") res.writeHead(200, { "content-type": "text/html" }).end(html);
-    };
-    await withServer(handler, async (origin) => {
-      const result = await run(["--url", `${origin}/`, "--browser", "firefox"]);
-      assert.equal(result.code, 1);
-      assert.match(result.stderr, /^firefox [^ ]+: stylesheet \/stall\.css was still loading 5 s after first paint$/m);
-    });
-  });
-
-  it("rejects an unknown browser before loading anything", async () => {
-    const result = await run(["--dist", embedded, "--browser", "webkit"]);
-    assert.equal(result.code, 2);
-    assert.match(result.stderr, /unknown browser webkit/);
-  });
+test("the command exits 1 and names the page and problem", async () => {
+  const dist = await site({ "index.html": html({ head: `<link rel="stylesheet" href="/site.css">` }), "site.css": EMBEDDED });
+  const run = promisify(execFile)(process.execPath, [CHECK, "--dist", dist]);
+  await assert.rejects(run, (/** @type {any} */ error) => error.code === 1 && /index\.html: <head> does not inline/.test(error.stderr));
 });

@@ -1,25 +1,17 @@
 name: First paint
 description: >-
-  Fail when a page can paint before its stylesheets or fonts are in place, in
-  Firefox and Chromium.
+  Fail when a page can paint before its stylesheets or fonts are in place,
+  by reading its HTML and CSS.
 
 inputs:
   dist:
     description: >-
-      Directory of built HTML to serve and check, relative to the workspace.
-      Every .html file under it is checked.
+      Directory of built HTML to check, relative to the workspace. Every .html
+      file under it is checked.
   urls:
     description: >-
       Pages a running server already serves, one URL per line. Start the
       server in an earlier step. Use this for pages rendered on request.
-  browsers:
-    description: Browsers to check in, separated by spaces.
-    default: firefox chromium
-  hold-ms:
-    description: >-
-      How long the check holds back every stylesheet and font response, in
-      milliseconds.
-    default: "600"
 
 runs:
   using: composite
@@ -32,28 +24,16 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
       run: npm ci --omit=dev --no-audit --no-fund
-    - name: Install browsers
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      env:
-        BROWSERS: ${{ inputs.browsers }}
-      run: |
-        read -ra browsers <<< "$BROWSERS"
-        npx --no-install playwright install --with-deps "${browsers[@]}"
     - name: Check first paint
       shell: bash
       env:
         CHECK: ${{ github.action_path }}/check-first-paint.mjs
         DIST: ${{ inputs.dist }}
         URLS: ${{ inputs.urls }}
-        BROWSERS: ${{ inputs.browsers }}
-        HOLD_MS: ${{ inputs.hold-ms }}
       run: |
-        args=(--hold-ms "$HOLD_MS")
+        args=()
         if [[ -n "$DIST" ]]; then args+=(--dist "$DIST"); fi
         while read -r url; do
           if [[ -n "$url" ]]; then args+=(--url "$url"); fi
         done <<< "$URLS"
-        read -ra browsers <<< "$BROWSERS"
-        for browser in "${browsers[@]}"; do args+=(--browser "$browser"); done
         node "$CHECK" "${args[@]}"

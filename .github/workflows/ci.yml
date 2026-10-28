@@ -47,7 +47,7 @@ jobs:
   first-paint:
     name: first-paint
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: first-paint
@@ -60,16 +60,14 @@ jobs:
           node-version: lts/*
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
-      - run: npx --no-install playwright install --with-deps firefox chromium
       - run: npm test
       # Run the action itself on a page that follows its README.
       - name: Build a page that paints correctly
         run: |
           site="$RUNNER_TEMP/site"
           mkdir -p "$site"
-          font="$(base64 -w0 test/fixtures/ibm-plex-mono-400.woff2)"
-          printf '@font-face { font-family: Fixture; src: url("data:font/woff2;base64,%s") format("woff2"); }\n' \
-            "$font" > "$site/site.css"
+          printf '@font-face { font-family: Fixture; src: url("data:font/woff2;base64,AAAA") format("woff2"); }\n' \
+            > "$site/site.css"
           {
             printf '<!doctype html><html><head><meta charset="utf-8"><script>'
             cat hold-first-paint.js
