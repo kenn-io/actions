@@ -41,10 +41,10 @@ func TestCheckReportsPinsOffMain(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []Finding{
-		{File: "go.mod", Repo: "forge", Ref: "bbbb", Source: "go.mod: squashed pull request head", Problem: "bbbb is not on kenn-io/forge main (unmerged commits: 1); pin a commit on main instead"},
-		{File: "web/package.json", Repo: "kit-ui", Ref: "cccc", Source: "web/package.json: open pull request", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
-		{File: "web/bun.lock", Repo: "kit-ui", Ref: "cccc", Source: "web/bun.lock: open pull request", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
-		{File: "desktop/package.json", Repo: "app-ui", Ref: "dddd", Source: "desktop/package.json: missing", Problem: "kenn-io/app-ui has no revision dddd, or this check cannot read the repository"},
+		{File: "go.mod", Repo: "forge", Ref: "bbbb", Source: "go.mod: squashed pull request head", Revision: "bbbb", Problem: "bbbb is not on kenn-io/forge main (unmerged commits: 1); pin a commit on main instead"},
+		{File: "web/package.json", Repo: "kit-ui", Ref: "cccc", Source: "web/package.json: open pull request", Revision: "cccc", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
+		{File: "web/bun.lock", Repo: "kit-ui", Ref: "cccc", Source: "web/bun.lock: open pull request", Revision: "cccc", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
+		{File: "desktop/package.json", Repo: "app-ui", Ref: "dddd", Source: "desktop/package.json: missing", Revision: "dddd", Problem: "kenn-io/app-ui has no revision dddd, or this check cannot read the repository"},
 	}, findings)
 	// Findings render the file, dependency, and problem for CLI output.
 	require.Equal(t, "go.mod: squashed pull request head: bbbb is not on kenn-io/forge main (unmerged commits: 1); pin a commit on main instead", findings[0].String())
@@ -85,6 +85,7 @@ func TestCheckFailsWhenGitHubRefuses(t *testing.T) {
 // Bun records a tag dependency by the tag object's hash. The check finds the
 // tag that points at it, and a hash no tag points at still fails.
 func TestCheckResolvesTagObjectHashes(t *testing.T) {
+	status := "behind"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/kenn-io/kata/git/matching-refs/tags":
@@ -93,7 +94,7 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 				{"ref":"refs/tags/v0.14.3","object":{"type":"tag","sha":"c6685725ecd6a31aaea83cf98908e0c866c5d434"}}
 			]`))
 		case "/repos/kenn-io/kata/compare/main...v0.14.3":
-			_, _ = w.Write([]byte(`{"status":"behind","ahead_by":0}`))
+			_, _ = w.Write([]byte(`{"status":"` + status + `","ahead_by":1}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -106,6 +107,18 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []Finding{
-		{File: "bun.lock", Repo: "kata", Ref: "0123456", Source: "bun.lock: unknown hash", Problem: "kenn-io/kata has no revision 0123456, or this check cannot read the repository"},
+		{File: "bun.lock", Repo: "kata", Ref: "0123456", Source: "bun.lock: unknown hash", Revision: "0123456", Problem: "kenn-io/kata has no revision 0123456, or this check cannot read the repository"},
 	}, findings)
+	status = "ahead"
+	pins := []Pin{
+		{File: "bun.lock", Repo: "kata", Ref: "c668572", Source: "bun.lock: tag object"},
+		{File: "web/bun.lock", Repo: "kata", Ref: "c668572", Source: "web/bun.lock: tag object"},
+	}
+	findings, err = (GitHub{Client: server.Client(), BaseURL: server.URL}).Check(t.Context(), pins)
+	require.NoError(t, err)
+	require.Len(t, findings, 2)
+	for n, finding := range findings {
+		require.Equal(t, pins[n], finding.Pin, "retain the original file evidence")
+		require.Equal(t, "v0.14.3", finding.Revision, "callers must look up the revision GitHub compared")
+	}
 }

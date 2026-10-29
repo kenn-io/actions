@@ -32,7 +32,8 @@ type GitHub struct {
 // Finding describes a pin that is not on its sibling's main branch.
 type Finding struct {
 	Pin
-	Problem string
+	Revision string // Revision actually compared; Ref retains the pin's file evidence.
+	Problem  string
 }
 
 func (f Finding) String() string {
@@ -44,21 +45,21 @@ func (f Finding) String() string {
 // The error reports failures to ask GitHub, not off-main pins.
 func (g GitHub) Check(ctx context.Context, pins []Pin) ([]Finding, error) {
 	type key struct{ repo, ref string }
-	verdicts := make(map[key]string)
+	verdicts := make(map[key]Finding)
 	var findings []Finding
 	for _, pin := range pins {
 		k := key{pin.Repo, pin.Ref}
-		problem, seen := verdicts[k]
+		finding, seen := verdicts[k]
 		if !seen {
 			var err error
-			problem, err = g.offMain(ctx, pin.Repo, pin.Ref)
+			finding.Revision, finding.Problem, err = g.offMain(ctx, pin.Repo, pin.Ref)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", pin.Source, err)
 			}
-			verdicts[k] = problem
+			verdicts[k] = finding
 		}
-		if problem != "" {
-			findings = append(findings, Finding{Pin: pin, Problem: problem})
+		if finding.Problem != "" {
+			findings = append(findings, Finding{Pin: pin, Revision: finding.Revision, Problem: finding.Problem})
 		}
 	}
 	return findings, nil
@@ -70,41 +71,41 @@ type comparison struct {
 	AheadBy int    `json:"ahead_by"`
 }
 
-// offMain returns why ref is not on main, or "" when it is.
-func (g GitHub) offMain(ctx context.Context, repo, ref string) (string, error) {
+// offMain returns the compared revision and why it is off main, or an empty problem.
+func (g GitHub) offMain(ctx context.Context, repo, ref string) (string, string, error) {
 	var result comparison
 	// per_page=1 keeps the commit list short; only the counts matter.
 	found, err := g.get(ctx, fmt.Sprintf("/repos/%s/%s/compare/%s...%s?per_page=1", Owner, repo, Branch, ref), &result)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	compared := ref
 	if !found && objectHash.MatchString(ref) {
 		tag, err := g.tagForObject(ctx, repo, ref)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		if tag != "" {
 			compared = tag
 			found, err = g.get(ctx, fmt.Sprintf("/repos/%s/%s/compare/%s...%s?per_page=1", Owner, repo, Branch, tag), &result)
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
 		}
 	}
 	if !found {
 		// GitHub also answers 404 for a private repository the token cannot
 		// read, so the message names both causes.
-		return fmt.Sprintf("%s/%s has no revision %s, or this check cannot read the repository", Owner, repo, ref), nil
+		return compared, fmt.Sprintf("%s/%s has no revision %s, or this check cannot read the repository", Owner, repo, ref), nil
 	}
 	switch result.Status {
 	case "identical", "behind":
-		return "", nil
+		return compared, "", nil
 	case "ahead", "diverged":
-		return fmt.Sprintf("%s is not on %s/%s %s (unmerged commits: %d); pin a commit on %s instead",
+		return compared, fmt.Sprintf("%s is not on %s/%s %s (unmerged commits: %d); pin a commit on %s instead",
 			compared, Owner, repo, Branch, result.AheadBy, Branch), nil
 	default:
-		return "", fmt.Errorf("GitHub compare %s/%s: unknown status %q", Owner, repo, result.Status)
+		return "", "", fmt.Errorf("GitHub compare %s/%s: unknown status %q", Owner, repo, result.Status)
 	}
 }
 
