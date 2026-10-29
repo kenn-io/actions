@@ -54,8 +54,7 @@ jobs:
           MALFORMED_GROUPS: ${{ steps.malformed.outputs.groups }}
           MALFORMED_ALL: ${{ steps.malformed.outputs.all }}
         run: |
-          # Main pushes exercise skipped filtering; PRs with 3,000+ files
-          # exercise the file-list cap.
+          # The main-push run covers the skipped-detector path.
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
             expected='[]'
             if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
