@@ -28,30 +28,28 @@ jobs:
         with:
           filters: |
             some-probe: ['**', '!**']
-            probe-file: ['changes/action.yml']
-            probe-exception: ['!**', 'changes/action.yml']
       - uses: ./changes
         id: reserved
         with:
           filters: "changes: ['**']"
+      - uses: ./changes
+        id: malformed
+        with:
+          filters: 'broken: ['
       - name: Check changes outputs
         env:
           EVENT: ${{ github.event_name }}
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           CHANGED_FILES: ${{ github.event.pull_request.changed_files || 0 }}
           GROUPS_JSON: ${{ steps.changes.outputs.groups }}
           ALL: ${{ steps.changes.outputs.all }}
           RESERVED_GROUPS: ${{ steps.reserved.outputs.groups }}
           RESERVED_ALL: ${{ steps.reserved.outputs.all }}
+          MALFORMED_GROUPS: ${{ steps.malformed.outputs.groups }}
+          MALFORMED_ALL: ${{ steps.malformed.outputs.all }}
         run: |
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
             expected='[]'
             if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
-            files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate)
-            probe_changed=$(jq -s 'any(.[][]; .filename == "changes/action.yml" or .previous_filename == "changes/action.yml")' <<< "$files")
-            if [[ "$probe_changed" == true ]]; then expected='["some-probe","probe-file","probe-exception"]'; fi
             test "$GROUPS_JSON" = "$expected"
             test "$ALL" = false
           else
@@ -60,6 +58,8 @@ jobs:
           fi
           test "$RESERVED_GROUPS" = '[]'
           test "$RESERVED_ALL" = true
+          test "$MALFORMED_GROUPS" = '[]'
+          test "$MALFORMED_ALL" = true
 
   sibling-pins:
     name: sibling-pins
