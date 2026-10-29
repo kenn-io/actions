@@ -34,6 +34,10 @@ jobs:
         with:
           filters: "changes: ['**']"
       - uses: ./changes
+        id: reserved_unmatched
+        with:
+          filters: "changes: ['__ci_reserved_unmatched_probe__']"
+      - uses: ./changes
         id: malformed
         with:
           filters: 'broken: ['
@@ -45,11 +49,13 @@ jobs:
           ALL: ${{ steps.changes.outputs.all }}
           RESERVED_GROUPS: ${{ steps.reserved.outputs.groups }}
           RESERVED_ALL: ${{ steps.reserved.outputs.all }}
+          RESERVED_UNMATCHED_GROUPS: ${{ steps.reserved_unmatched.outputs.groups }}
+          RESERVED_UNMATCHED_ALL: ${{ steps.reserved_unmatched.outputs.all }}
           MALFORMED_GROUPS: ${{ steps.malformed.outputs.groups }}
           MALFORMED_ALL: ${{ steps.malformed.outputs.all }}
         run: |
-          # The local harness checks the 3,000-file boundary. Hosted CI needs
-          # a pull request that large to exercise the PR boundary.
+          # Main pushes exercise skipped filtering; PRs with 3,000+ files
+          # exercise the file-list cap.
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
             expected='[]'
             if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
@@ -57,6 +63,8 @@ jobs:
             test "$ALL" = false
             test "$RESERVED_GROUPS" = '[]'
             test "$RESERVED_ALL" = true
+            test "$RESERVED_UNMATCHED_GROUPS" = '[]'
+            test "$RESERVED_UNMATCHED_ALL" = true
             test "$MALFORMED_GROUPS" = '[]'
             test "$MALFORMED_ALL" = true
           else
