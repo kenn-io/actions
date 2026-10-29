@@ -28,7 +28,6 @@ jobs:
         with:
           filters: |
             some-probe: ['**', '!**']
-            none: ['!**']
             probe-file: ['changes/action.yml']
             probe-exception: ['!**', 'changes/action.yml']
       - uses: ./changes
