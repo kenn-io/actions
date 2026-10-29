@@ -29,8 +29,7 @@ jobs:
           filters: |
             some-probe: ['**', '!**']
             none: ['!**']
-            probe-file: ['changes/action.yml']
-            probe-exception: ['!**', 'changes/action.yml']
+            probe-exception: ['!**', '**']
       - uses: ./changes
         id: reserved
         with:
@@ -46,13 +45,15 @@ jobs:
         run: |
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
             expected='[]'
-            if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
-            if [[ "$GROUPS_JSON" == *'"probe-file"'* ]]; then expected='["some-probe","probe-file","probe-exception"]'; fi
-            test "$GROUPS_JSON" = "$expected" && test "$ALL" = false
+            if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe","probe-exception"]'; fi
+            test "$GROUPS_JSON" = "$expected"
+            test "$ALL" = false
           else
-            test "$GROUPS_JSON" = '[]' && test "$ALL" = true
+            test "$GROUPS_JSON" = '[]'
+            test "$ALL" = true
           fi
-          test "$RESERVED_GROUPS" = '[]' && test "$RESERVED_ALL" = true
+          test "$RESERVED_GROUPS" = '[]'
+          test "$RESERVED_ALL" = true
 
   sibling-pins:
     name: sibling-pins
