@@ -1,4 +1,4 @@
-package main
+package siblingpins
 
 import (
 	"testing"
@@ -62,29 +62,29 @@ replace go.kenn.io/app-client => ../..
 
 	pins, err := Collect(files)
 	require.NoError(t, err)
-	var got [][2]string
+	var got [][3]string
 	for _, pin := range pins {
-		got = append(got, [2]string{pin.Repo, pin.Ref})
+		got = append(got, [3]string{pin.File, pin.Repo, pin.Ref})
 	}
-	require.ElementsMatch(t, [][2]string{
-		{"kit", "v0.35.1"},
-		{"kit", "3e1f59e9011e878ec595aa04aebc8a77c5292c4d"},
-		{"kit", "532a5501741e"},
-		{"app-server", "bbef853d70fd"},
-		{"forge", "5fc3781f38fc"},
-		{"kit", "v0.38.0"},
-		{"tools", "sub/v2.1.0"},
-		{"docbank", "07f6238bc79c"},
-		{"roborev", "64e5f2afa0d1"},
-		{"app-ui", "b5b99f230e62f6346ec83ae74f17bcc55cc2dfa6"},
-		{"kit-ui", "bccce525981be5a2afbcb95fba29952052a659e1"},
-		{"kit-ui", "bccce525981be5a2afbcb95fba29952052a659e1"},
-		{"kit-ui", "bccce52"},
-		{"brand", "79dc99be"},
-		{"actions", "fc37c96bb2d4"},
-		{"app-platform", "6400ba5900e5"},
-		{"forge", "v0.4.0"},
-		{"kit", "v0.38.0"},
+	require.ElementsMatch(t, [][3]string{
+		{".custom-gcl.yml", "kit", "v0.35.1"},
+		{"Makefile", "kit", "3e1f59e9011e878ec595aa04aebc8a77c5292c4d"},
+		{"tools/Makefile", "kit", "532a5501741e"},
+		{"go.mod", "app-server", "bbef853d70fd"},
+		{"go.mod", "forge", "5fc3781f38fc"},
+		{"go.mod", "kit", "v0.38.0"},
+		{"go.mod", "tools", "sub/v2.1.0"},
+		{"go.mod", "docbank", "07f6238bc79c"},
+		{"go.mod", "roborev", "64e5f2afa0d1"},
+		{"web/package.json", "app-ui", "b5b99f230e62f6346ec83ae74f17bcc55cc2dfa6"},
+		{"web/package.json", "kit-ui", "bccce525981be5a2afbcb95fba29952052a659e1"},
+		{"web/bun.lock", "kit-ui", "bccce525981be5a2afbcb95fba29952052a659e1"},
+		{"web/bun.lock", "kit-ui", "bccce52"},
+		{"web/bun.lock", "brand", "79dc99be"},
+		{".github/workflows/ci.yml", "actions", "fc37c96bb2d4"},
+		{".github/workflows/deploy.yml", "app-platform", "6400ba5900e5"},
+		{".github/workflows/ci.yml", "forge", "v0.4.0"},
+		{"tools/lint/action.yml", "kit", "v0.38.0"},
 	}, got)
 }
 

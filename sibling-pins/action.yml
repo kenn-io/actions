@@ -19,6 +19,21 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Check pull request merge ref
+      if: startsWith(inputs.ref, 'refs/pull/') && endsWith(inputs.ref, '/merge')
+      shell: bash
+      env:
+        REF: ${{ inputs.ref }}
+        TOKEN: ${{ github.token }}
+      run: |
+        authorization=$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')
+        status=0
+        git -c "http.extraheader=AUTHORIZATION: basic $authorization" \
+          ls-remote --exit-code "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$REF" || status=$?
+        if [ "$status" -eq 2 ]; then
+          echo '::notice title=Merge conflicts::This pull request conflicts with its base branch, so GitHub has no merge to check. Resolve the conflicts; that push runs this check, as does the merge queue.'
+          exit 1
+        fi
     # Only dependency files are checked out. The checker never runs code from
     # the candidate.
     - name: Checkout candidate dependency files
