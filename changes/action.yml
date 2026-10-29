@@ -7,10 +7,10 @@ inputs:
 outputs:
   groups:
     description: JSON array of matching group names.
-    value: ${{ steps.filter.outputs.changes || '[]' }}
+    value: ${{ steps.filter.outputs.changes != 'true' && steps.filter.outputs.changes != 'false' && steps.filter.outputs.changes || '[]' }}
   all:
-    description: Whether every job should run because filtering was skipped.
-    value: ${{ github.event_name != 'pull_request' || github.event.pull_request.changed_files >= 3000 }}
+    description: Whether every job should run.
+    value: ${{ github.event_name != 'pull_request' || github.event.pull_request.changed_files >= 3000 || steps.filter.outputs.changes == 'true' || steps.filter.outputs.changes == 'false' }}
 runs:
   using: composite
   steps:
@@ -19,4 +19,3 @@ runs:
       id: filter
       with:
         filters: ${{ inputs.filters }}
-        predicate-quantifier: some

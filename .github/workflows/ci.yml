@@ -27,8 +27,7 @@ jobs:
         id: changes
         with:
           filters: |
-            kept: ['!{nonexistent/**}']
-            selected: ['**']
+            some-probe: ['**', '!**']
             none: ['!**']
       - name: Check changes outputs
         env:
@@ -38,7 +37,9 @@ jobs:
           ALL: ${{ steps.changes.outputs.all }}
         run: |
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
-            test "$GROUPS_JSON" = '["kept","selected"]' && test "$ALL" = false
+            expected='[]'
+            if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
+            test "$GROUPS_JSON" = "$expected" && test "$ALL" = false
           else
             test "$GROUPS_JSON" = '[]' && test "$ALL" = true
           fi
