@@ -9,13 +9,14 @@ outputs:
     description: JSON array of matching group names.
     value: ${{ steps.filter.outputs.changes || '[]' }}
   all:
-    description: Whether every job should run for an event other than a pull request.
-    value: ${{ github.event_name != 'pull_request' }}
+    description: Whether every job should run because filtering was skipped.
+    value: ${{ github.event_name != 'pull_request' || github.event.pull_request.changed_files >= 3000 }}
 runs:
   using: composite
   steps:
     - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' && github.event.pull_request.changed_files < 3000
       id: filter
       with:
         filters: ${{ inputs.filters }}
+        predicate-quantifier: some

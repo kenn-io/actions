@@ -27,15 +27,18 @@ jobs:
         id: changes
         with:
           filters: |
+            kept: ['!{nonexistent/**}']
             selected: ['**']
+            none: ['!**']
       - name: Check changes outputs
         env:
           EVENT: ${{ github.event_name }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files || 0 }}
           GROUPS_JSON: ${{ steps.changes.outputs.groups }}
           ALL: ${{ steps.changes.outputs.all }}
         run: |
-          if [[ "$EVENT" == pull_request ]]; then
-            test "$GROUPS_JSON" = '["selected"]' && test "$ALL" = false
+          if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
+            test "$GROUPS_JSON" = '["kept","selected"]' && test "$ALL" = false
           else
             test "$GROUPS_JSON" = '[]' && test "$ALL" = true
           fi

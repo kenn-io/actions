@@ -4,7 +4,7 @@ Select CI lanes from changed paths. Each filter lists paths safe to skip in one
 negated brace pattern. Positive exceptions keep inputs a lane still consumes.
 An unknown path matches every lane whose skip set leaves it out.
 
-`filters` is required YAML in [dorny/paths-filter syntax](https://github.com/dorny/paths-filter).
+`filters` must be a named YAML mapping in [dorny/paths-filter syntax](https://github.com/dorny/paths-filter).
 Reserve `changes`, which dorny uses for its output. `groups` is a JSON array of
 matching names. `all` is `true` for events other than `pull_request`.
 
@@ -28,7 +28,7 @@ jobs:
             go: ['!{frontend/**,docs/**,*.md}', 'docs/embedded.md']
   test:
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.all == 'true' || contains(fromJSON(needs.changes.outputs.groups || '[]'), 'go')) }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.all == 'true' || contains(fromJSON(needs.changes.outputs.groups), 'go')) }}
     runs-on: ubuntu-latest
     steps:
       - run: echo 'Run Go checks here'
@@ -37,3 +37,6 @@ jobs:
 Use one combined negated pattern per lane. With the default `some` quantifier,
 separate negated patterns also match paths skipped by another pattern.
 The condition runs checks if detection fails.
+
+GitHub lists at most 3,000 changed files. At that count or above, this action
+skips filtering and sets `all=true` so a partial file list cannot skip a lane.
