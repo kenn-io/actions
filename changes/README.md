@@ -41,7 +41,8 @@ jobs:
 Use one combined negated pattern per lane. With the default `some` quantifier,
 separate negated patterns also match paths skipped by another pattern.
 For one path, use `!docs/**`; a one-entry brace such as `!{docs/**}` does not expand.
-The condition runs checks if detection fails.
+Detector failure, including missing `pull-requests: read` permission or invalid
+filters, sets `all=true` and runs every lane.
 
 GitHub lists at most 3,000 changed files. At that count or above, this action
 skips filtering and sets `all=true` so a partial file list cannot skip a lane.
