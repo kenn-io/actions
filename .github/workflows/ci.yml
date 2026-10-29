@@ -28,6 +28,7 @@ jobs:
         with:
           filters: |
             some-probe: ['**']
+            unmatched-probe: ['__ci_changes_unmatched_probe__']
       - uses: ./changes
         id: reserved
         with:
@@ -47,6 +48,8 @@ jobs:
           MALFORMED_GROUPS: ${{ steps.malformed.outputs.groups }}
           MALFORMED_ALL: ${{ steps.malformed.outputs.all }}
         run: |
+          # The local harness checks the 3,000-file boundary. Hosted CI needs
+          # a pull request that large to exercise the PR boundary.
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
             expected='[]'
             if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
