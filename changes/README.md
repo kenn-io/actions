@@ -6,7 +6,8 @@ An unknown path matches every lane whose skip set leaves it out.
 
 `filters` must be a named YAML mapping in [dorny/paths-filter syntax](https://github.com/dorny/paths-filter).
 Without `:` or a newline, dorny reads a bare string as a filter-file path.
-Reserve `changes`, which dorny uses for its output. `groups` is a JSON array of
+Reserve `changes`, which dorny uses for its output. A name collision returns
+`groups=[]` and `all=true`. `groups` is a JSON array of
 matching names. `all` is `true` for events other than `pull_request` and for
 pull requests with at least 3,000 changed files.
 
@@ -38,6 +39,7 @@ jobs:
 
 Use one combined negated pattern per lane. With the default `some` quantifier,
 separate negated patterns also match paths skipped by another pattern.
+For one path, use `!docs/**`; a one-entry brace such as `!{docs/**}` does not expand.
 The condition runs checks if detection fails.
 
 GitHub lists at most 3,000 changed files. At that count or above, this action

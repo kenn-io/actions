@@ -29,20 +29,30 @@ jobs:
           filters: |
             some-probe: ['**', '!**']
             none: ['!**']
+            probe-file: ['changes/action.yml']
+            probe-exception: ['!**', 'changes/action.yml']
+      - uses: ./changes
+        id: reserved
+        with:
+          filters: "changes: ['**']"
       - name: Check changes outputs
         env:
           EVENT: ${{ github.event_name }}
           CHANGED_FILES: ${{ github.event.pull_request.changed_files || 0 }}
           GROUPS_JSON: ${{ steps.changes.outputs.groups }}
           ALL: ${{ steps.changes.outputs.all }}
+          RESERVED_GROUPS: ${{ steps.reserved.outputs.groups }}
+          RESERVED_ALL: ${{ steps.reserved.outputs.all }}
         run: |
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
             expected='[]'
             if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
+            if [[ "$GROUPS_JSON" == *'"probe-file"'* ]]; then expected='["some-probe","probe-file","probe-exception"]'; fi
             test "$GROUPS_JSON" = "$expected" && test "$ALL" = false
           else
             test "$GROUPS_JSON" = '[]' && test "$ALL" = true
           fi
+          test "$RESERVED_GROUPS" = '[]' && test "$RESERVED_ALL" = true
 
   sibling-pins:
     name: sibling-pins
