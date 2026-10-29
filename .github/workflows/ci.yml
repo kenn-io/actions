@@ -27,7 +27,7 @@ jobs:
         id: changes
         with:
           filters: |
-            some-probe: ['**', '!**']
+            some-probe: ['**']
       - uses: ./changes
         id: reserved
         with:
@@ -52,14 +52,14 @@ jobs:
             if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
             test "$GROUPS_JSON" = "$expected"
             test "$ALL" = false
+            test "$RESERVED_GROUPS" = '[]'
+            test "$RESERVED_ALL" = true
+            test "$MALFORMED_GROUPS" = '[]'
+            test "$MALFORMED_ALL" = true
           else
             test "$GROUPS_JSON" = '[]'
             test "$ALL" = true
           fi
-          test "$RESERVED_GROUPS" = '[]'
-          test "$RESERVED_ALL" = true
-          test "$MALFORMED_GROUPS" = '[]'
-          test "$MALFORMED_ALL" = true
 
   sibling-pins:
     name: sibling-pins
