@@ -23,11 +23,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: bash changes/resolve_test.sh
       - uses: ./changes
+        id: changes
         with:
           filters: |
-            actions: ['**']
+            selected: ['**']
+      - name: Check changes outputs
+        env:
+          EVENT: ${{ github.event_name }}
+          GROUPS_JSON: ${{ steps.changes.outputs.groups }}
+          ALL: ${{ steps.changes.outputs.all }}
+        run: |
+          if [[ "$EVENT" == pull_request ]]; then
+            test "$GROUPS_JSON" = '["selected"]' && test "$ALL" = false
+          else
+            test "$GROUPS_JSON" = '[]' && test "$ALL" = true
+          fi
 
   sibling-pins:
     name: sibling-pins

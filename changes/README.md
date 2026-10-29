@@ -1,20 +1,21 @@
 # Changes
 
-Run jobs for their changed paths. Unknown paths and events other than
-`pull_request` set `all=true`, so new files keep full coverage.
+Select CI lanes from changed paths. Each filter lists paths safe to skip in one
+negated brace pattern. Positive exceptions keep inputs a lane still consumes.
+An unknown path matches every lane whose skip set leaves it out.
 
 `filters` is required YAML in [dorny/paths-filter syntax](https://github.com/dorny/paths-filter).
-Reserve `all` for paths that need every job. Outputs are `groups`, a JSON array
-of matching names, and `all`, the string `true` or `false`.
+Reserve `changes`, which dorny uses for its output. `groups` is a JSON array of
+matching names. `all` is `true` for events other than `pull_request`.
 
-Pin to a full commit on this repository's `main`.
+Pin to a full commit on this repository's `main`. Grant `pull-requests: read`,
+and `contents: read` when the job also checks out code.
 
 ```yaml
 jobs:
   changes:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       pull-requests: read
     outputs:
       groups: ${{ steps.changes.outputs.groups }}
@@ -24,9 +25,7 @@ jobs:
         id: changes
         with:
           filters: |
-            go: ['**/*.go']
-            docs: ['**/*.md']
-            all: ['.github/**', 'go.mod', 'go.sum']
+            go: ['!{frontend/**,docs/**,*.md}', 'docs/embedded.md']
   test:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.all == 'true' || contains(fromJSON(needs.changes.outputs.groups || '[]'), 'go')) }}
@@ -35,4 +34,6 @@ jobs:
       - run: echo 'Run Go checks here'
 ```
 
+Use one combined negated pattern per lane. With the default `some` quantifier,
+separate negated patterns also match paths skipped by another pattern.
 The condition runs checks if detection fails.
