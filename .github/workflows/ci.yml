@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   sibling-pins:
     name: sibling-pins
@@ -45,8 +49,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: go run . --root ..
       - name: Lint workflows and actions
-        working-directory: .
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes=
+        uses: jdx/jactionlint@baa8d685e2b27ff5821558c9eeabb2051c1da61b # v2.4.0
+        with:
+          version: 2.4.0
+          profile: default
+          online: "false"
+          args: --shellcheck= --pyflakes=
+          working-directory: ${{ github.workspace }}
+          annotations: "false"
 
   first-paint:
     name: first-paint
