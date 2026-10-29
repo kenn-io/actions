@@ -5,8 +5,10 @@ negated brace pattern. Positive exceptions keep inputs a lane still consumes.
 An unknown path matches every lane whose skip set leaves it out.
 
 `filters` must be a named YAML mapping in [dorny/paths-filter syntax](https://github.com/dorny/paths-filter).
+Without `:` or a newline, dorny reads a bare string as a filter-file path.
 Reserve `changes`, which dorny uses for its output. `groups` is a JSON array of
-matching names. `all` is `true` for events other than `pull_request`.
+matching names. `all` is `true` for events other than `pull_request` and for
+pull requests with at least 3,000 changed files.
 
 Pin to a full commit on this repository's `main`. Grant `pull-requests: read`,
 and `contents: read` when the job also checks out code.
