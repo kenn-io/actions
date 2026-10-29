@@ -4,6 +4,7 @@ Shared GitHub Actions for kenn-io repositories.
 
 | Action | Purpose |
 | --- | --- |
+| [`changes`](changes/README.md) | Runs jobs for changed path groups, with full coverage for unknown paths. |
 | [`first-paint`](first-paint/README.md) | Fails when a page can paint before its stylesheets or fonts are in place. |
 | [`sibling-pins`](sibling-pins/README.md) | Blocks a merge that pins a kenn-io sibling at a revision off that sibling's `main`. |
 

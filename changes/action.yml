@@ -1,0 +1,35 @@
+name: Changes
+description: Classify pull-request paths, running all jobs for unknown paths and other events.
+inputs:
+  filters:
+    description: YAML path groups in dorny/paths-filter syntax. The all group runs every job.
+    required: true
+outputs:
+  groups:
+    description: JSON array of matching group names.
+    value: ${{ steps.resolve.outputs.groups }}
+  all:
+    description: Whether every job should run.
+    value: ${{ steps.resolve.outputs.all }}
+runs:
+  using: composite
+  steps:
+    - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+      if: github.event_name == 'pull_request'
+      id: files
+      with:
+        filters: 'paths: ["**"]'
+        list-files: json
+    - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+      if: github.event_name == 'pull_request'
+      id: filter
+      with:
+        filters: ${{ inputs.filters }}
+        list-files: json
+    - id: resolve
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+        FILES: ${{ steps.files.outputs.paths_files }}
+        FILTERS: ${{ toJSON(steps.filter.outputs) }}
+      run: bash "$GITHUB_ACTION_PATH/resolve.sh" >> "$GITHUB_OUTPUT"
