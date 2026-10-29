@@ -1,0 +1,39 @@
+name: First paint
+description: >-
+  Fail when a page can paint before its stylesheets or fonts are in place,
+  by reading its HTML and CSS.
+
+inputs:
+  dist:
+    description: >-
+      Directory of built HTML to check, relative to the workspace. Every .html
+      file under it is checked.
+  urls:
+    description: >-
+      Pages a running server already serves, one URL per line. Start the
+      server in an earlier step. Use this for pages rendered on request.
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node for the check
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: lts/*
+    - name: Install the check
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --omit=dev --no-audit --no-fund
+    - name: Check first paint
+      shell: bash
+      env:
+        CHECK: ${{ github.action_path }}/check-first-paint.mjs
+        DIST: ${{ inputs.dist }}
+        URLS: ${{ inputs.urls }}
+      run: |
+        args=()
+        if [[ -n "$DIST" ]]; then args+=(--dist "$DIST"); fi
+        while read -r url; do
+          if [[ -n "$url" ]]; then args+=(--url "$url"); fi
+        done <<< "$URLS"
+        node "$CHECK" "${args[@]}"

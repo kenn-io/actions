@@ -47,3 +47,37 @@ jobs:
       - name: Lint workflows and actions
         working-directory: .
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes=
+
+  first-paint:
+    name: first-paint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: first-paint
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      # Run the action itself on a page that follows its README.
+      - name: Build a page that paints correctly
+        run: |
+          site="$RUNNER_TEMP/site"
+          mkdir -p "$site"
+          printf '@font-face { font-family: Fixture; src: url("data:font/woff2;base64,AAAA") format("woff2"); }\n' \
+            > "$site/site.css"
+          {
+            printf '<!doctype html><html><head><meta charset="utf-8"><script>'
+            cat hold-first-paint.js
+            printf '</script><link rel="stylesheet" href="/site.css"></head>'
+            printf '<body><p style="font-family: Fixture, monospace">The quick brown fox</p></body></html>\n'
+          } > "$site/index.html"
+      - uses: ./first-paint
+        with:
+          dist: ${{ runner.temp }}/site
