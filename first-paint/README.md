@@ -16,13 +16,16 @@ three things:
    page's opacity to 0 until its stylesheets and fonts load, for at most 3
    seconds. Pages without JavaScript are never hidden. The inline copy must
    match this action's copy line for line; comment lines above the code may
-   differ. A page with a `script-src` Content Security Policy needs the
-   script's hash in that policy.
+   differ. Inline it once: a second copy keeps the page hidden for good. A
+   page with a `script-src` Content Security Policy needs the script's hash in
+   that policy.
 2. **Links each stylesheet with a plain `<link rel="stylesheet">` in `<head>`.**
    A stylesheet in `<body>`, or one a script swaps in after it loads, such as
-   the `media="print"` `onload` trick, does not block first paint. An inline
-   `<style>` cannot `@import` a stylesheet, since the hold script waits only
-   for `<link>` stylesheets.
+   the `media="print"` `onload` trick, does not block first paint. The check
+   cannot tell what an `onload` handler does, so a stylesheet with one fails
+   unless its `media` is empty, `all`, or `screen`. An inline `<style>` cannot
+   `@import` a stylesheet, since the hold script waits only for `<link>`
+   stylesheets.
 3. **Embeds every font in its stylesheets as a `data:` URL.** A font in a
    separate file is discovered only after the stylesheet is parsed, so the
    browser paints before the font arrives. The check follows `@import` and reads

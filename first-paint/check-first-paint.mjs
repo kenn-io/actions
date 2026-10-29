@@ -58,7 +58,7 @@ const runsInline = (/** @type {Element} */ el) =>
 // A print-only stylesheet never styles the screen, so it cannot flash. Every
 // query in the list has to be for print.
 const isPrint = (/** @type {string | undefined} */ media) =>
-  (media ?? "").split(",").every((query) => /^\s*(?:only\s+)?print(?:\s+and\b.*)?$/is.test(query));
+  (media ?? "").split(",").every((query) => /^(?:only\s+)?print(?:\s+and\b.*)?$/is.test(query.trim()));
 
 // A stylesheet a script swaps in after it loads, such as the media="print"
 // onload trick or a preload whose onload sets rel, never blocks first paint.
@@ -107,17 +107,22 @@ async function checkCss(css, base, page, load, seen, inline = false) {
   root.walkAtRules((rule) => {
     const name = rule.name.toLowerCase();
     if (name === "font-face" && !inPrintMedia(rule)) {
+      // Every url( must open a data: URL. Anything else fails, including a URL
+      // written in a form this check does not decode.
       rule.walkDecls(/^src$/i, (decl) => {
-        for (const match of decl.value.matchAll(new RegExp(URL_TOKEN, "gi"))) {
-          const url = firstGroup(match);
+        for (const [, url = ""] of decl.value.matchAll(/url\(\s*["']?([^"')]*)/gi)) {
           if (!/^data:/i.test(url)) {
-            problems.push(`font ${url} in ${base.pathname} loads as a separate file; embed it as a data: URL`);
+            problems.push(`font ${url.trim()} in ${base.pathname} loads as a separate file; embed it as a data: URL`);
           }
         }
       });
     } else if (name === "import") {
       const match = rule.params.match(IMPORT);
-      if (!match || isPrint(match[6])) return;
+      if (!match) {
+        problems.push(`@import ${rule.params} in ${base.pathname} could not be read`);
+        return;
+      }
+      if (isPrint(match[6])) return;
       const url = new URL(firstGroup(match), base);
       if (inline) {
         problems.push(`an inline <style> imports ${url.pathname}; move the import into a linked stylesheet`);
@@ -157,7 +162,8 @@ export async function checkPage(html, page, load) {
   const inHead = new Set(head ? elements(head) : []);
   const baseHref = all.find((el) => el.tagName === "base" && attr(el, "href") !== undefined);
   const base = baseHref ? new URL(attr(baseHref, "href") ?? "", page) : page;
-  const hold = all.findIndex((el) => runsInline(el) && inHead.has(el) && code(text(el)) === HOLD);
+  const holds = all.filter((el) => runsInline(el) && code(text(el)) === HOLD);
+  const hold = all.findIndex((el) => holds.includes(el) && inHead.has(el));
   /** @type {Set<string>} */
   const seen = new Set();
   let first = -1;
@@ -174,6 +180,9 @@ export async function checkPage(html, page, load) {
       problems.push(...(await checkSheet(new URL(href, base), page, load, seen)));
     }
   }
+  // A second copy saves the first copy's opacity of 0 as the page's own and
+  // restores it, so the page never shows.
+  if (holds.length > 1) problems.push(`hold-first-paint.js is inlined ${holds.length} times; inline it once`);
   if (first !== -1 && hold === -1) {
     problems.push("<head> does not inline this action's hold-first-paint.js");
   } else if (first !== -1 && hold > first) {
