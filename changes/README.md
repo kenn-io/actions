@@ -18,6 +18,7 @@ and `contents: read` when the job also checks out code.
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: read
     outputs:

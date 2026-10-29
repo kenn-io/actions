@@ -29,7 +29,8 @@ jobs:
           filters: |
             some-probe: ['**', '!**']
             none: ['!**']
-            probe-exception: ['!**', '**']
+            probe-file: ['changes/action.yml']
+            probe-exception: ['!**', 'changes/action.yml']
       - uses: ./changes
         id: reserved
         with:
@@ -37,6 +38,9 @@ jobs:
       - name: Check changes outputs
         env:
           EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           CHANGED_FILES: ${{ github.event.pull_request.changed_files || 0 }}
           GROUPS_JSON: ${{ steps.changes.outputs.groups }}
           ALL: ${{ steps.changes.outputs.all }}
@@ -45,7 +49,10 @@ jobs:
         run: |
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
             expected='[]'
-            if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe","probe-exception"]'; fi
+            if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
+            files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate)
+            probe_changed=$(jq -s 'any(.[][]; .filename == "changes/action.yml" or .previous_filename == "changes/action.yml")' <<< "$files")
+            if [[ "$probe_changed" == true ]]; then expected='["some-probe","probe-file","probe-exception"]'; fi
             test "$GROUPS_JSON" = "$expected"
             test "$ALL" = false
           else
