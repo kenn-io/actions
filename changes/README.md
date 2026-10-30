@@ -4,9 +4,9 @@ Select CI lanes from changed paths. Each filter lists paths safe to skip in one
 negated brace pattern. Positive exceptions keep inputs a lane still consumes.
 An unknown path matches every lane whose skip set leaves it out.
 
-`filters` must be a named YAML mapping in [dorny/paths-filter syntax](https://github.com/dorny/paths-filter).
-Without `:` or a newline, dorny reads a bare string as a filter-file path.
-Reserve `changes`, which dorny uses for its output. A name collision returns
+`filters` must be a named YAML mapping in [paths-filter syntax](https://github.com/step-security/paths-filter).
+Without `:` or a newline, paths-filter reads a bare string as a filter-file path.
+Reserve `changes`, which paths-filter uses for its output. A name collision returns
 `groups=[]` and `all=true`. `groups` is a JSON array of
 matching names. `all` is `true` for events other than `pull_request` and for
 pull requests with at least 3,000 changed files.
