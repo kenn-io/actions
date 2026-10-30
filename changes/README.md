@@ -11,7 +11,7 @@ Reserve `changes`, which paths-filter uses for its output. A name collision retu
 matching names. `all` is `true` for events other than `pull_request` and for
 pull requests with at least 3,000 changed files.
 
-Pin to a full commit on this repository's `main`. Grant `pull-requests: read`,
+Reference it at `@main`; the lockfile pins the commit. Grant `pull-requests: read`,
 and `contents: read` when the job also checks out code.
 
 ```yaml
@@ -25,7 +25,7 @@ jobs:
       groups: ${{ steps.changes.outputs.groups }}
       all: ${{ steps.changes.outputs.all }}
     steps:
-      - uses: kenn-io/actions/changes@<full commit SHA on main>
+      - uses: kenn-io/actions/changes@main
         id: changes
         with:
           filters: |

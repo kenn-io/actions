@@ -50,11 +50,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       # Build the site here.
-      - uses: kenn-io/actions/first-paint@<commit on main>
+      - uses: kenn-io/actions/first-paint@main
         with:
           dist: dist
 ```
@@ -65,16 +65,16 @@ the server in an earlier step and list its pages:
 ```yaml
       - name: Start the server
         run: ./bin/server --listen 127.0.0.1:8080 &
-      - uses: kenn-io/actions/first-paint@<commit on main>
+      - uses: kenn-io/actions/first-paint@main
         with:
           urls: |
             http://127.0.0.1:8080/
             http://127.0.0.1:8080/settings
 ```
 
-`dist` and `urls` can be combined. Pin the action to a full commit on this
-repository's `main`. When you move the pin, copy that commit's
-`hold-first-paint.js` too, or the check fails.
+`dist` and `urls` can be combined. Reference the action at `@main`; the
+lockfile pins the commit. When `gh actions-lock` moves the pin, copy that
+commit's `hold-first-paint.js` too, or the check fails.
 
 ## Embed fonts
 
