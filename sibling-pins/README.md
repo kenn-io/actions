@@ -61,6 +61,9 @@ jobs:
 - Reference the action at `@main`; the lockfile pins the commit.
 - Keep the job name `Sibling pins on main`. The required status check matches
   that name.
+- Keep the `edited` trigger, and don't skip the job with `if:`. GitHub reports
+  a skipped job under its raw `name:` expression, so the required check never
+  reports and the pull request can't merge.
 - Run the action in its own job. It installs its own Go version.
 - A pull request with no merge ref fails with a merge-conflicts notice.
   Resolve the conflicts; that push runs the check, as does the merge queue.
