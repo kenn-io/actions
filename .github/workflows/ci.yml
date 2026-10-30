@@ -13,6 +13,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./changes
+        id: changes
+        with:
+          filters: |
+            some-probe: ['**']
+            unmatched-probe: ['__ci_changes_unmatched_probe__']
+      - uses: ./changes
+        id: reserved
+        with:
+          filters: "changes: ['**']"
+      - uses: ./changes
+        id: reserved_unmatched
+        with:
+          filters: "changes: ['__ci_reserved_unmatched_probe__']"
+      - uses: ./changes
+        id: malformed
+        with:
+          filters: 'broken: ['
+      - name: Check changes outputs
+        env:
+          EVENT: ${{ github.event_name }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files || 0 }}
+          GROUPS_JSON: ${{ steps.changes.outputs.groups }}
+          ALL: ${{ steps.changes.outputs.all }}
+          RESERVED_GROUPS: ${{ steps.reserved.outputs.groups }}
+          RESERVED_ALL: ${{ steps.reserved.outputs.all }}
+          RESERVED_UNMATCHED_GROUPS: ${{ steps.reserved_unmatched.outputs.groups }}
+          RESERVED_UNMATCHED_ALL: ${{ steps.reserved_unmatched.outputs.all }}
+          MALFORMED_GROUPS: ${{ steps.malformed.outputs.groups }}
+          MALFORMED_ALL: ${{ steps.malformed.outputs.all }}
+        run: |
+          # The main-push run covers the skipped-detector path.
+          if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
+            expected='[]'
+            if [[ "$CHANGED_FILES" -gt 0 ]]; then expected='["some-probe"]'; fi
+            test "$GROUPS_JSON" = "$expected"
+            test "$ALL" = false
+            test "$RESERVED_GROUPS" = '[]'
+            test "$RESERVED_ALL" = true
+            test "$RESERVED_UNMATCHED_GROUPS" = '[]'
+            test "$RESERVED_UNMATCHED_ALL" = true
+            test "$MALFORMED_GROUPS" = '[]'
+            test "$MALFORMED_ALL" = true
+          else
+            test "$GROUPS_JSON" = '[]'
+            test "$ALL" = true
+          fi
+
   sibling-pins:
     name: sibling-pins
     runs-on: ubuntu-latest

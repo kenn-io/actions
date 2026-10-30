@@ -1,0 +1,22 @@
+name: Changes
+description: Select CI lanes from caller-defined path filters.
+inputs:
+  filters:
+    description: YAML path groups in paths-filter syntax. Reserve the changes name.
+    required: true
+outputs:
+  groups:
+    description: JSON array of matching group names.
+    value: ${{ steps.filter.outputs.changes != 'true' && steps.filter.outputs.changes != 'false' && steps.filter.outputs.changes || '[]' }}
+  all:
+    description: Whether every job should run.
+    value: ${{ steps.filter.outcome != 'success' || steps.filter.outputs.changes == 'true' || steps.filter.outputs.changes == 'false' }}
+runs:
+  using: composite
+  steps:
+    - uses: step-security/paths-filter@5f3d1a83daa17363d18b529d60375e1e36566799 # v4.0.3
+      if: github.event_name == 'pull_request' && github.event.pull_request.changed_files < 3000
+      id: filter
+      continue-on-error: true
+      with:
+        filters: ${{ inputs.filters }}
