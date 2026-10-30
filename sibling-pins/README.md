@@ -52,13 +52,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: kenn-io/actions/sibling-pins@<commit on main>
+      - uses: kenn-io/actions/sibling-pins@main
 ```
 
 - `pull_request` runs with the same permissions as normal pull request CI,
   including for forks. The action checks out only the candidate's dependency
   files and never runs the candidate's code. Do not use `pull_request_target`.
-- Pin the action to a full commit on this repository's `main`.
+- Reference the action at `@main`; the lockfile pins the commit.
 - Keep the job name `Sibling pins on main`. The required status check matches
   that name.
 - Run the action in its own job. It installs its own Go version.
@@ -79,13 +79,13 @@ below is available only to same-repository pull requests and merge groups.
     steps:
       - name: Read sibling repositories
         id: token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        uses: actions/create-github-app-token@v3.3.0
         with:
           app-id: ${{ vars.<APP_ID_VARIABLE> }}
           private-key: ${{ secrets.<APP_PRIVATE_KEY_SECRET> }}
           owner: kenn-io
           permission-contents: read
-      - uses: kenn-io/actions/sibling-pins@<commit on main>
+      - uses: kenn-io/actions/sibling-pins@main
         with:
           github-token: ${{ steps.token.outputs.token }}
 ```
