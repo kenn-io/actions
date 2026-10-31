@@ -1,7 +1,7 @@
 // @ts-check
 // Fails when a page can paint before its stylesheets or fonts are in place.
-// A page passes when it inlines hold-first-paint.js in <head> before any
-// stylesheet, links each stylesheet with a plain <link> in <head>, and embeds
+// A page using web fonts must inline hold-first-paint.js in <head> before any
+// stylesheet. Every page links stylesheets with a plain <link> in <head> and embeds
 // every font in its stylesheets as a data: URL. The check reads HTML and CSS
 // only, so it cannot see a stylesheet or font that a script adds at runtime.
 import { readFile, readdir } from "node:fs/promises";
@@ -14,6 +14,7 @@ import postcss, { AtRule, Container } from "postcss";
 /** @typedef {import("parse5").DefaultTreeAdapterMap["element"]} Element */
 /** @typedef {import("parse5").DefaultTreeAdapterMap["node"]} Node */
 /** @typedef {(url: URL) => Promise<{ text: string, url: URL } | undefined>} Load */
+/** @typedef {{ seen: Set<string>, webFonts: boolean }} CssState */
 
 // Pages under --dist resolve against this origin, so relative and absolute
 // stylesheet URLs map onto files the way a server would serve them.
@@ -90,11 +91,11 @@ const firstGroup = (/** @type {RegExpMatchArray} */ match) => match.slice(1, 6).
  * Lists problems in one stylesheet and the stylesheets it imports.
  * An inline <style> that imports a stylesheet fails: the hold script waits only
  * for <link> stylesheets, so it would show the page before the import loads.
- * @param {string} css @param {URL} base @param {URL} page @param {Load} load @param {Set<string>} seen
+ * @param {string} css @param {URL} base @param {URL} page @param {Load} load @param {CssState} state
  * @param {boolean} [inline]
  * @returns {Promise<string[]>}
  */
-async function checkCss(css, base, page, load, seen, inline = false) {
+async function checkCss(css, base, page, load, state, inline = false) {
   let root;
   try {
     root = postcss.parse(css);
@@ -107,6 +108,7 @@ async function checkCss(css, base, page, load, seen, inline = false) {
   root.walkAtRules((rule) => {
     const name = rule.name.toLowerCase();
     if (name === "font-face" && !inPrintMedia(rule)) {
+      state.webFonts = true;
       // Every url( must open a data: URL. Anything else fails, including a URL
       // written in a form this check does not decode.
       rule.walkDecls(/^src$/i, (decl) => {
@@ -131,23 +133,23 @@ async function checkCss(css, base, page, load, seen, inline = false) {
       }
     }
   });
-  for (const url of imports) problems.push(...(await checkSheet(url, page, load, seen)));
+  for (const url of imports) problems.push(...(await checkSheet(url, page, load, state)));
   return problems;
 }
 
 /**
- * @param {URL} url @param {URL} page @param {Load} load @param {Set<string>} seen
+ * @param {URL} url @param {URL} page @param {Load} load @param {CssState} state
  * @returns {Promise<string[]>}
  */
-async function checkSheet(url, page, load, seen) {
+async function checkSheet(url, page, load, state) {
   const elsewhere = `is on another origin; serve it with the site and embed its fonts`;
   if (url.origin !== page.origin) return [`stylesheet ${url.href} ${elsewhere}`];
-  if (seen.has(url.href)) return [];
-  seen.add(url.href);
+  if (state.seen.has(url.href)) return [];
+  state.seen.add(url.href);
   const loaded = await load(url);
   if (loaded === undefined) return [`stylesheet ${url.pathname} was not found`];
   if (loaded.url.origin !== page.origin) return [`stylesheet ${url.pathname} redirects to ${loaded.url.href}, which ${elsewhere}`];
-  return checkCss(loaded.text, loaded.url, page, load, seen);
+  return checkCss(loaded.text, loaded.url, page, load, state);
 }
 
 /**
@@ -164,26 +166,26 @@ export async function checkPage(html, page, load) {
   const base = baseHref ? new URL(attr(baseHref, "href") ?? "", page) : page;
   const holds = all.filter((el) => runsInline(el) && code(text(el)) === HOLD);
   const hold = all.findIndex((el) => holds.includes(el) && inHead.has(el));
-  /** @type {Set<string>} */
-  const seen = new Set();
+  /** @type {CssState} */
+  const state = { seen: new Set(), webFonts: false };
   let first = -1;
   for (const [index, el] of all.entries()) {
     if (isSwapped(el)) {
       problems.push(`stylesheet ${attr(el, "href") ?? ""} is swapped in by an onload handler; link it with a plain <link rel="stylesheet">`);
     } else if (el.tagName === "style" && !isPrint(attr(el, "media"))) {
       if (first === -1) first = index;
-      problems.push(...(await checkCss(text(el), base, page, load, seen, true)));
+      problems.push(...(await checkCss(text(el), base, page, load, state, true)));
     } else if (isStylesheet(el) && !isPrint(attr(el, "media"))) {
       if (first === -1) first = index;
       const href = attr(el, "href") ?? "";
       if (!inHead.has(el)) problems.push(`stylesheet ${href} is outside <head>`);
-      problems.push(...(await checkSheet(new URL(href, base), page, load, seen)));
+      problems.push(...(await checkSheet(new URL(href, base), page, load, state)));
     }
   }
   // A second copy saves the first copy's opacity of 0 as the page's own and
   // restores it, so the page never shows.
   if (holds.length > 1) problems.push(`hold-first-paint.js is inlined ${holds.length} times; inline it once`);
-  if (first !== -1 && hold === -1) {
+  if (state.webFonts && hold === -1) {
     problems.push("<head> does not inline this action's hold-first-paint.js");
   } else if (first !== -1 && hold > first) {
     problems.push("hold-first-paint.js comes after the first stylesheet");
@@ -191,18 +193,19 @@ export async function checkPage(html, page, load) {
   return problems;
 }
 
-/** @type {Load} */
-async function fetchText(url) {
-  const response = await fetch(url);
+/** @param {URL} url @param {string} [bearerToken] */
+async function fetchText(url, bearerToken) {
+  const headers = bearerToken ? { Authorization: `Bearer ${bearerToken}` } : undefined;
+  const response = await fetch(url, { headers });
   return response.ok ? { text: await response.text(), url: new URL(response.url) } : undefined;
 }
 
 /**
  * Checks every .html file under dist and every page URL.
- * @param {{ dist?: string, urls?: string[] }} options
+ * @param {{ dist?: string, urls?: string[], bearerToken?: string }} options
  * @returns {Promise<Map<string, string[]>>} problems by page, for pages that have any
  */
-export async function check({ dist, urls = [] }) {
+export async function check({ dist, urls = [], bearerToken }) {
   /** @type {Map<string, string[]>} */
   const results = new Map();
   if (dist) {
@@ -226,8 +229,11 @@ export async function check({ dist, urls = [] }) {
     }
   }
   for (const url of urls) {
-    const loaded = await fetchText(new URL(url));
-    const problems = loaded === undefined ? ["page returned an error"] : await checkPage(loaded.text, loaded.url, fetchText);
+    const page = new URL(url);
+    /** @type {Load} */
+    const load = (target) => fetchText(target, target.origin === page.origin ? bearerToken : undefined);
+    const loaded = await load(page);
+    const problems = loaded === undefined ? ["page returned an error"] : await checkPage(loaded.text, loaded.url, load);
     if (problems.length > 0) results.set(url, problems);
   }
   return results;
@@ -241,7 +247,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.error("usage: check-first-paint.mjs [--dist <dir>] [--url <url>]...");
     process.exit(2);
   }
-  const results = await check({ dist: values.dist, urls: values.url });
+  const results = await check({ dist: values.dist, urls: values.url, bearerToken: process.env.FIRST_PAINT_BEARER_TOKEN });
   for (const [page, problems] of results) {
     for (const problem of problems) console.error(`${page}: ${problem}`);
   }

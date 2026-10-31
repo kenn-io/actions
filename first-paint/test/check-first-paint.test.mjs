@@ -49,6 +49,37 @@ test("a page with no stylesheets needs no hold script", async () => {
   assert.deepEqual(await check({ dist }), new Map());
 });
 
+test("render-blocking system fonts need no hold script", async () => {
+  const dist = await site({
+    "index.html": html({ head: `<link rel="stylesheet" href="/site.css">` }),
+    "site.css": `@import "base.css"; @media print { ${EMBEDDED} }`,
+    "base.css": `body { font-family: system-ui, sans-serif; }`,
+  });
+  assert.deepEqual(await check({ dist }), new Map());
+});
+
+test("an imported embedded font still requires the hold script", async () => {
+  const dist = await site({
+    "index.html": html({ head: `<link rel="stylesheet" href="/site.css">` }),
+    "site.css": `@import "fonts.css";`,
+    "fonts.css": EMBEDDED,
+  });
+  assert.match((await check({ dist })).get("index.html")?.join("\n") ?? "", /does not inline/);
+});
+
+for (const page of [
+  { head: "", body: `<link rel="stylesheet" href="/site.css">`, problem: /outside <head>/ },
+  { head: `<link rel="stylesheet" href="/site.css" media="print" onload="this.media='all'">`, problem: /onload/ },
+]) {
+  test(`system fonts still reject stylesheets matching ${page.problem}`, async () => {
+    const dist = await site({
+      "index.html": html(page),
+      "site.css": `body { font-family: system-ui; }`,
+    });
+    assert.match((await check({ dist })).get("index.html")?.join("\n") ?? "", page.problem);
+  });
+}
+
 const broken = [
   { name: "no hold script", head: `<link rel="stylesheet" href="/site.css">`, expect: /does not inline/ },
   {
@@ -138,6 +169,58 @@ test("pages a server renders are checked over HTTP", async (t) => {
   assert.ok(address && typeof address === "object");
   const url = `http://127.0.0.1:${address.port}/`;
   assert.match((await check({ urls: [url] })).get(url)?.join("\n") ?? "", /face\.woff2 .*separate file/);
+});
+
+test("the command authenticates the page and stylesheet without skipping font checks", async (t) => {
+  let css = EMBEDDED;
+  const server = createServer((request, response) => {
+    if (request.headers.authorization !== "Bearer example-token") {
+      return void response.writeHead(401).end();
+    }
+    if (request.url === "/") return void response.end(html({}));
+    if (request.url === "/site.css") return void response.end(css);
+    response.writeHead(404).end();
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", () => done(undefined)));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const url = `http://127.0.0.1:${address.port}/`;
+  const run = promisify(execFile);
+  await assert.rejects(
+    run(process.execPath, [CHECK, "--url", url], { env: { ...process.env, FIRST_PAINT_BEARER_TOKEN: "" } }),
+    (/** @type {any} */ error) => error.code === 1 && /page returned an error/.test(error.stderr),
+  );
+  const env = { ...process.env, FIRST_PAINT_BEARER_TOKEN: "example-token" };
+  await run(process.execPath, [CHECK, "--url", url], { env });
+  css = `@font-face { src: url(/late.woff2); }`;
+  await assert.rejects(
+    run(process.execPath, [CHECK, "--url", url], { env }),
+    (/** @type {any} */ error) => error.code === 1 && /late\.woff2 .*separate file/.test(error.stderr),
+  );
+});
+
+test("a page redirect never sends its bearer token to another origin or that page's CSS", async (t) => {
+  /** @type {(string | undefined)[]} */
+  const received = [];
+  const elsewhere = createServer((request, response) => {
+    received.push(request.headers.authorization);
+    response.end(request.url === "/site.css" ? EMBEDDED : html({}));
+  });
+  await new Promise((done) => elsewhere.listen(0, "127.0.0.1", () => done(undefined)));
+  t.after(() => elsewhere.close());
+  const destination = elsewhere.address();
+  assert.ok(destination && typeof destination === "object");
+  const server = createServer((request, response) => {
+    assert.equal(request.headers.authorization, "Bearer example-token");
+    response.writeHead(302, { location: `http://127.0.0.1:${destination.port}/` }).end();
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", () => done(undefined)));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  assert.deepEqual(await check({ urls: [`http://127.0.0.1:${address.port}/`], bearerToken: "example-token" }), new Map());
+  assert.deepEqual(received, [undefined, undefined]);
 });
 
 test("a redirected stylesheet resolves its imports from where it landed", async (t) => {

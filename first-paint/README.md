@@ -10,8 +10,8 @@ The action reads each page's HTML and the CSS it links. It needs no browser
 and checks a site of 60 pages in under a second. A page passes when it does
 three things:
 
-1. **Inlines [`hold-first-paint.js`](hold-first-paint.js) in `<head>`, before
-   any stylesheet.** Chromium decodes even an embedded font only after its first
+1. **When using web fonts, inlines [`hold-first-paint.js`](hold-first-paint.js)
+   in `<head>`, before any stylesheet.** Chromium decodes even an embedded font only after its first
    paint, so it paints one frame in the fallback face. The script sets the
    page's opacity to 0 until its stylesheets and fonts load, for at most 3
    seconds. Pages without JavaScript are never hidden. The inline copy must
@@ -32,8 +32,9 @@ three things:
    inline `<style>` too. A stylesheet on another origin, such as a font
    service's, fails, since its fonts are separate files.
 
-A page with no stylesheets passes. Print-only stylesheets and `@media print`
-rules are skipped.
+A page using only system fonts needs no hold script; its stylesheets must still
+block rendering. A page with no stylesheets passes. Print-only stylesheets and
+`@media print` rules are skipped.
 
 The check cannot see a stylesheet or font that a script adds at runtime, such
 as one a route loads on demand.
@@ -76,6 +77,10 @@ the server in an earlier step and list its pages:
 lockfile pins the commit. When `gh actions-lock` moves the pin, copy that
 commit's `hold-first-paint.js` too, or the check fails.
 
+For authenticated pages, pass `bearer-token` and use a URL that accepts bearer
+authentication. The token is sent only to each configured URL's origin, including
+its stylesheets. The HTTP checker does not retain browser session cookies.
+
 ## Embed fonts
 
 With Vite, Astro, or SvelteKit, inline font files as data URLs:
@@ -101,3 +106,5 @@ node check-first-paint.mjs --url http://127.0.0.1:8080/
 ```
 
 The check exits 1 and lists each problem by page.
+Set `FIRST_PAINT_BEARER_TOKEN` when checking a server that requires bearer
+authentication. The token stays out of command arguments.
