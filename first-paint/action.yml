@@ -12,6 +12,10 @@ inputs:
     description: >-
       Pages a running server already serves, one URL per line. Start the
       server in an earlier step. Use this for pages rendered on request.
+  bearer-token:
+    description: >-
+      Optional bearer token for each listed URL and its same-origin stylesheets.
+      Cookie-based browser login is not supported by the HTTP checker.
 
 runs:
   using: composite
@@ -30,6 +34,7 @@ runs:
         CHECK: ${{ github.action_path }}/check-first-paint.mjs
         DIST: ${{ inputs.dist }}
         URLS: ${{ inputs.urls }}
+        FIRST_PAINT_BEARER_TOKEN: ${{ inputs.bearer-token }}
       run: |
         args=()
         if [[ -n "$DIST" ]]; then args+=(--dist "$DIST"); fi
