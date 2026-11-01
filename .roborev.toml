@@ -1,7 +1,10 @@
 review_guidelines = """
 This repository holds shared composite GitHub Actions. Other kenn-io
 repositories pin each action to a full commit on main and run it in their own
-CI jobs. Review each action against that model.
+CI jobs. Review each action against that model. The sibling-pins README also
+documents `go.kenn.io/actions/sibling-pins/siblingpins` as a Go package that
+Go programs can import for `Collect` and `GitHub.Check`, so treat its exported
+API as public.
 
 ## Trust model
 
