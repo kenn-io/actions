@@ -1,9 +1,9 @@
 // @ts-check
 // Fails when a page can paint before its stylesheets or fonts are in place.
-// A page using web fonts must inline hold-first-paint.js in <head> before any
-// stylesheet. Every page links stylesheets with a plain <link> in <head> and embeds
-// every font in its stylesheets as a data: URL. The check reads HTML and CSS
-// only, so it cannot see a stylesheet or font that a script adds at runtime.
+// A page using web fonts or body styles must inline hold-first-paint.js in <head>
+// before any stylesheet. Every page links stylesheets with a plain <link> in
+// <head> and embeds every font in its stylesheets as a data: URL. The check reads
+// HTML and CSS only, so it cannot see stylesheets or fonts added at runtime.
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -168,11 +168,13 @@ export async function checkPage(html, page, load) {
   const hold = all.findIndex((el) => holds.includes(el) && inHead.has(el));
   /** @type {CssState} */
   const state = { seen: new Set(), webFonts: false };
+  let hasBodyStyle = false;
   let first = -1;
   for (const [index, el] of all.entries()) {
     if (isSwapped(el)) {
       problems.push(`stylesheet ${attr(el, "href") ?? ""} is swapped in by an onload handler; link it with a plain <link rel="stylesheet">`);
     } else if (el.tagName === "style" && !isPrint(attr(el, "media"))) {
+      hasBodyStyle ||= !inHead.has(el);
       if (first === -1) first = index;
       problems.push(...(await checkCss(text(el), base, page, load, state, true)));
     } else if (isStylesheet(el) && !isPrint(attr(el, "media"))) {
@@ -185,7 +187,7 @@ export async function checkPage(html, page, load) {
   // A second copy saves the first copy's opacity of 0 as the page's own and
   // restores it, so the page never shows.
   if (holds.length > 1) problems.push(`hold-first-paint.js is inlined ${holds.length} times; inline it once`);
-  if (state.webFonts && hold === -1) {
+  if ((state.webFonts || hasBodyStyle) && hold === -1) {
     problems.push("<head> does not inline this action's hold-first-paint.js");
   } else if (first !== -1 && hold > first) {
     problems.push("hold-first-paint.js comes after the first stylesheet");

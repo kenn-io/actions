@@ -32,9 +32,11 @@ three things:
    inline `<style>` too. A stylesheet on another origin, such as a font
    service's, fails, since its fonts are separate files.
 
-A page using only system fonts needs no hold script; its stylesheets must still
-block rendering. A page with no stylesheets passes. Print-only stylesheets and
-`@media print` rules are skipped.
+A page using only system fonts needs no hold script when its styles are in
+`<head>` and block rendering. An inline `<style>` in `<body>` still requires the
+hold script: visible content can arrive before that style in streamed HTML.
+A page with no stylesheets passes. Print-only stylesheets and `@media print`
+rules are skipped.
 
 The check cannot see a stylesheet or font that a script adds at runtime, such
 as one a route loads on demand.

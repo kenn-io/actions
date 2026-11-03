@@ -58,6 +58,30 @@ test("render-blocking system fonts need no hold script", async () => {
   assert.deepEqual(await check({ dist }), new Map());
 });
 
+test("inline system-font styles after visible content require the hold script", async () => {
+  const dist = await site({
+    "index.html": html({ head: "", body: `<p>Text</p><style>p { color: red; }</style>` }),
+  });
+  assert.match((await check({ dist })).get("index.html")?.join("\n") ?? "", /does not inline/);
+});
+
+test("the hold script covers inline system-font styles in the body", async () => {
+  const dist = await site({
+    "index.html": html({ head: holdScript, body: `<p>Text</p><style>p { color: red; }</style>` }),
+  });
+  assert.deepEqual(await check({ dist }), new Map());
+});
+
+test("head styles and print-only body styles need no hold script", async () => {
+  const dist = await site({
+    "index.html": html({
+      head: `<style>p { color: red; }</style>`,
+      body: `<p>Text</p><style media="print">p { color: black; }</style>`,
+    }),
+  });
+  assert.deepEqual(await check({ dist }), new Map());
+});
+
 test("an imported embedded font still requires the hold script", async () => {
   const dist = await site({
     "index.html": html({ head: `<link rel="stylesheet" href="/site.css">` }),
