@@ -39,7 +39,7 @@ name: Sibling pins on main
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
   merge_group:
     types: [checks_requested]
 
@@ -61,9 +61,16 @@ jobs:
 - Reference the action at `@main`; the lockfile pins the commit.
 - Keep the job name `Sibling pins on main`. The required status check matches
   that name.
-- Keep the `edited` trigger, and don't skip the job with `if:`. GitHub reports
-  a skipped job under its raw `name:` expression, so the required check never
-  reports and the pull request can't merge.
+- Leave out the `edited` type. GitHub sends it when someone edits the pull
+  request's title or description, or changes its base branch. Each edit starts
+  another run on the same commit, and GitHub reports the newest run's result.
+  If that run is cancelled, for example by a concurrency group, the required
+  check stays cancelled and the merge queue rejects the pull request.
+- Don't skip the job with `if:` either. A skipped required job counts as
+  passing, so a skipped run would replace a real failure.
+- A base branch change does not rerun the check. The merge queue checks the
+  merge group commit. Without a merge queue, push a commit or close and reopen
+  the pull request to check it against the new base.
 - Run the action in its own job. It installs its own Go version.
 - A pull request with no merge ref fails with a merge-conflicts notice.
   Resolve the conflicts; that push runs the check, as does the merge queue.
