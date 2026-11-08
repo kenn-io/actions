@@ -73,6 +73,7 @@ func TestReleaseCommands(t *testing.T) {
 		{"absent child", ".md", "```sh\nstub group absent\n```", `has no command "absent"`, 2},
 		{"unknown flag", ".md", "`stub run file --bogus`", "unknown flag: --bogus", 1},
 		{"child flag before child", ".md", "`stub group --limit 50 child ID`", "", 0},
+		{"multiline flag description", ".md", "`stub group child ID --limit 50`", "", 0},
 		{"unknown clustered shorthand", ".md", "`stub group child ID -hZ`", "unknown shorthand flag", 1},
 		{"formatted wrapper output", ".sh", `info() { printf '%s\n' "$*"; }; info 'stub run' 'file --bogus'`, "unknown flag: --bogus", 1},
 		{"compact boolean global", ".md", "`compact run file --json`", "", 0},

@@ -95,7 +95,7 @@ func describe(output string) (usage, error) {
 		for _, line := range flagLines {
 			match := flagLine.FindStringSubmatch(line)
 			if match == nil {
-				if compact || strings.TrimSpace(line) != "" {
+				if compact || strings.HasPrefix(strings.TrimSpace(line), "-") {
 					return u, errors.New("unsupported help: unrecognized flag line")
 				}
 				continue
