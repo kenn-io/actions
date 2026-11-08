@@ -142,7 +142,10 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 							failure = cmp.Or(failure, err)
 							return false
 						}
-						args = append(args, value)
+						// echo reads leading option words such as -n or -En before printing the rest.
+						if name != "echo" || len(args) > 0 || len(value) < 2 || strings.TrimRight(value, "neE") != "-" {
+							args = append(args, value)
+						}
 					}
 					if joiners[name] {
 						messages = append(messages, example{strings.Join(args, " "), int(call.Args[1].Pos().Line())})
@@ -219,13 +222,9 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 				}
 				markerNode = quote.FirstChild()
 			}
-			if html, ok := markerNode.(*ast.HTMLBlock); ok {
-				if strings.Contains(html.Value.Str(source), "<!-- release-commands: expected-failure -->") {
-					pending = "expected-failure marker"
-				}
-				if pending != "" {
-					continue
-				}
+			if html, ok := markerNode.(*ast.HTMLBlock); ok && strings.Contains(html.Value.Str(source), "<!-- release-commands: expected-failure -->") {
+				pending = "expected-failure marker"
+				continue
 			}
 			if markerNode.Kind() == ast.KindParagraph && strings.HasPrefix(visible(markerNode, source), note) {
 				pending = "unreleased note"

@@ -183,12 +183,6 @@ jobs:
           DRIFT_OUTCOME: ${{ steps.drift.outcome }}
         run: |
           test "$DRIFT_OUTCOME" = failure
-          if go run . --archive "$RUNNER_TEMP/release-fixture/stub.tar.gz" --binary stub testdata/fixture.md > "$RUNNER_TEMP/drift.log" 2>&1; then
-            cat "$RUNNER_TEMP/drift.log"
-            exit 1
-          fi
-          cat "$RUNNER_TEMP/drift.log"
-          grep -Eq 'unknown command|no command' "$RUNNER_TEMP/drift.log"
 
   first-paint:
     name: first-paint

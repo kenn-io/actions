@@ -97,26 +97,25 @@ func punctuation(source string) []int {
 }
 
 func synopses(source string) []string {
-	positions := punctuation(source)
-	for _, i := range positions {
-		if source[i] == '[' || source[i] == ']' {
-			source = source[:i] + " " + source[i+1:]
-		}
-	}
+	plain := []byte(source)
 	for _, i := range punctuation(source) {
-		if source[i] != '|' || i == 0 || i+1 == len(source) || strings.ContainsAny(source[i-1:i+2], " \t") || source[i-1] == '|' || source[i+1] == '|' {
+		if source[i] == '[' || source[i] == ']' {
+			plain[i] = ' '
+		}
+		if source[i] != '|' || i == 0 || i+1 == len(source) || source[i-1] == '|' || source[i+1] == '|' {
 			continue
 		}
-		start, end := i, i+1
-		for start > 0 && !unicode.IsSpace(rune(source[start-1])) && !strings.ContainsRune(";&|", rune(source[start-1])) {
-			start--
+		// A spaced bar separates alternatives only inside optional brackets; elsewhere it is a pipeline.
+		spaced := strings.ContainsAny(source[i-1:i+2], " \t")
+		keep := func(c rune) bool {
+			return !strings.ContainsRune("[]", c) && (spaced || !unicode.IsSpace(c) && !strings.ContainsRune(";&|", c))
 		}
-		for end < len(source) && !unicode.IsSpace(rune(source[end])) && !strings.ContainsRune(";&|", rune(source[end])) {
-			end++
+		start, end := len(strings.TrimRightFunc(source[:i], keep)), len(source)-len(strings.TrimLeftFunc(source[i+1:], keep))
+		if !spaced || start > 0 && source[start-1] == '[' && end < len(source) && source[end] == ']' {
+			return append(synopses(source[:i]+source[end:]), synopses(source[:start]+source[i+1:])...)
 		}
-		return append(synopses(source[:i]+source[end:]), synopses(source[:start]+source[i+1:])...)
 	}
-	return []string{source}
+	return []string{string(plain)}
 }
 
 func placeholder(word string) bool {
