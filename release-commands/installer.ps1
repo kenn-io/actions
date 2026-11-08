@@ -23,16 +23,22 @@ do {
 $messages = @($tree.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object {
     $call = $_
     if (!$call.GetCommandName() -or !$printers[$call.GetCommandName()]) { return }
-    $named = if ($call.GetCommandName() -eq 'Write-Host') { [System.Management.Automation.Language.StaticParameterBinder]::BindCommand($call, $true).BoundParameters.GetEnumerator() | Where-Object Key -ne 'Object' | ForEach-Object { $_.Value.Value } }
+    $bound = if ($call.GetCommandName() -eq 'Write-Host') { [System.Management.Automation.Language.StaticParameterBinder]::BindCommand($call, $true).BoundParameters }
+    $named = if ($bound) { $bound.GetEnumerator() | Where-Object Key -ne 'Object' | ForEach-Object { $_.Value.Value } }
     $parts = @(foreach ($element in $call.CommandElements | Select-Object -Skip 1) {
-        if ($named -notcontains $element -and ($element -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $element -is [System.Management.Automation.Language.ExpandableStringExpressionAst])) {
-            $line = $element.Extent.StartLineNumber
-            if ($element.Extent.Text.StartsWith('@')) { $line++ }
-            [pscustomobject]@{ text = $element.Value; line = $line }
+        if ($named -contains $element) { continue }
+        $items = if ($element -is [System.Management.Automation.Language.ArrayExpressionAst] -or $element -is [System.Management.Automation.Language.ArrayLiteralAst]) { $element.FindAll({ param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true) } else { $element }
+        foreach ($element in $items) {
+            if ($element -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $element -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
+                $line = $element.Extent.StartLineNumber
+                if ($element.Extent.Text.StartsWith('@')) { $line++ }
+                [pscustomobject]@{ text = $element.Value; line = $line }
+            }
         }
     })
     if ($call.GetCommandName() -eq 'Write-Host' -and $parts.Count) {
-        [pscustomobject]@{ text = $parts.text -join ' '; line = $parts[0].line }
+        $separator = if ($bound.ContainsKey('Separator')) { $bound['Separator'].ConstantValue } else { ' ' }
+        [pscustomobject]@{ text = $parts.text -join $separator; line = $parts[0].line }
     } else { $parts }
 })
 ConvertTo-Json -InputObject $messages -Compress

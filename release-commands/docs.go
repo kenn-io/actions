@@ -83,6 +83,13 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		for _, binary := range binaries {
 			words := strings.Fields(value)
+			for len(words) > 0 {
+				name, _, assigned := strings.Cut(words[0], "=")
+				if !assigned || !syntax.ValidName(name) {
+					break
+				}
+				words = words[1:]
+			}
 			if len(words) > 0 && words[0] == binary || slices.ContainsFunc(invocations, func(args []string) bool { return args[0] == binary }) {
 				current.commands = append(current.commands, example{text: value, line: line})
 				break
@@ -99,6 +106,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		} else {
 			printers := map[string]bool{"echo": true, "printf": true}
 			joiners := map[string]bool{"echo": true}
+			escapes := map[string]bool{}
 			// Follow installer helpers to the output calls they wrap.
 			for changed := true; changed; {
 				changed = false
@@ -110,6 +118,16 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 					syntax.Walk(function.Body, func(node syntax.Node) bool {
 						if call, ok := node.(*syntax.CallExpr); ok && len(call.Args) > 0 && printers[call.Args[0].Lit()] {
 							printers[function.Name.Value], changed = true, true
+							escapes[function.Name.Value] = escapes[call.Args[0].Lit()]
+							for _, word := range call.Args[1:] {
+								option := word.Lit()
+								if call.Args[0].Lit() != "echo" || len(option) < 2 || strings.TrimRight(option, "neE") != "-" {
+									break
+								}
+								if last := strings.LastIndexAny(option, "eE"); last >= 0 {
+									escapes[function.Name.Value] = option[last] == 'e'
+								}
+							}
 							syntax.Walk(call, func(node syntax.Node) bool {
 								if parameter, ok := node.(*syntax.ParamExp); ok && parameter.Param.Value == "*" {
 									joiners[function.Name.Value] = true
@@ -134,8 +152,9 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 				if !printers[name] {
 					return true
 				}
-				if len(call.Args) > 1 && (name == "printf" || joiners[name]) {
+				if len(call.Args) > 1 && (name == "printf" || joiners[name] || escapes[name]) {
 					var args []string
+					escaped := escapes[name]
 					for _, word := range call.Args[1:] {
 						value, err := expand.Literal(shellExpansion, word)
 						if err != nil {
@@ -145,10 +164,20 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 						// echo reads leading option words such as -n or -En before printing the rest.
 						if name != "echo" || len(args) > 0 || len(value) < 2 || strings.TrimRight(value, "neE") != "-" {
 							args = append(args, value)
+						} else if last := strings.LastIndexAny(value, "eE"); last >= 0 {
+							escaped = value[last] == 'e'
 						}
 					}
-					if joiners[name] {
-						messages = append(messages, example{strings.Join(args, " "), int(call.Args[1].Pos().Line())})
+					if joiners[name] || escaped {
+						value := strings.Join(args, " ")
+						if escaped {
+							var err error
+							value, _, err = expand.Format(shellExpansion, "%b", []string{value})
+							failure = cmp.Or(failure, err)
+						}
+						for line := range strings.SplitSeq(value, "\n") {
+							messages = append(messages, example{line, int(call.Pos().Line())})
+						}
 						return true
 					}
 					if args[0] == "--" && len(args) > 1 {
@@ -257,8 +286,8 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 								start = bytes.Count(source[:segment.Start], []byte{'\n'}) + 1
 							}
 							pending += strings.TrimSpace(value)
-							if prefix, ok := strings.CutSuffix(pending, "\\"); ok {
-								pending = prefix + " "
+							if (len(pending)-len(strings.TrimRight(pending, "\\")))%2 == 1 {
+								pending = strings.TrimSuffix(pending, "\\") + " "
 								continue
 							}
 							if index+1 < len(segments) {

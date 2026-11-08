@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var flagLine = regexp.MustCompile(`^\s*(?:-([\w])(?:,\s*|/))?(--[\w-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
+var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
 
 type usage struct {
 	path      []string
@@ -93,6 +93,10 @@ func describe(output string) (usage, error) {
 			continue
 		}
 		for _, line := range flagLines {
+			if !compact && !strings.HasPrefix(line, "  -") && !strings.HasPrefix(line, "      --") {
+				continue
+			}
+			line = strings.TrimSpace(line)
 			match := flagLine.FindStringSubmatch(line)
 			if match == nil {
 				if trimmed := strings.TrimSpace(line); compact || strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "- ") {
@@ -134,7 +138,7 @@ func check(ctx context.Context, binary string, args []string) error {
 			var flag *pflag.Flag
 			if strings.HasPrefix(name, "--") {
 				flag = current.flags.Lookup(name[2:])
-			} else {
+			} else if len(name) >= 2 {
 				flag = current.flags.ShorthandLookup(name[1:2])
 			}
 			unknownFlag = unknownFlag || flag == nil
