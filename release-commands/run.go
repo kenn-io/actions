@@ -121,6 +121,8 @@ func check(ctx context.Context, binary string, args []string) error {
 	if err != nil {
 		return err
 	}
+	unknownFlag := false
+	var missing error
 	// Match Cobra's Find behavior before validating flags against the final page.
 	for i := 0; i < len(args); i++ {
 		word := args[i]
@@ -135,6 +137,7 @@ func check(ctx context.Context, binary string, args []string) error {
 			} else {
 				flag = current.flags.ShorthandLookup(name[1:2])
 			}
+			unknownFlag = unknownFlag || flag == nil
 			if (strings.HasPrefix(name, "--") || len(name) == 2) && !assigned && (flag == nil || flag.NoOptDefVal == "") && i+1 < len(args) {
 				i++
 			}
@@ -152,10 +155,16 @@ func check(ctx context.Context, binary string, args []string) error {
 			continue
 		}
 		if !current.arguments {
-			return fmt.Errorf("has no command %q", word)
+			missing = fmt.Errorf("has no command %q", word)
+			if !unknownFlag {
+				return missing
+			}
 		}
 		break
 	}
 	// String values avoid type checks; a sentinel permits a flag without a sample.
-	return current.flags.Parse(append(slices.Clone(args), ""))
+	if err := current.flags.Parse(append(slices.Clone(args), "")); err != nil {
+		return err
+	}
+	return missing
 }
