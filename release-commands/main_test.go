@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	if err := writeFixtureArchive(fixture, map[string][]byte{"bin/stub": data}); err != nil {
+	if err := writeFixtureArchive(fixture, map[string][]byte{"bin/stub": data, "bin/compact": data, "bin/prose": data}); err != nil {
 		panic(err)
 	}
 	code := m.Run()
@@ -71,30 +71,37 @@ func TestReleaseCommands(t *testing.T) {
 		{"disabled flag parsing", ".md", "`stub unsafe file --help=false`", "", 0},
 		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"`, 3},
 		{"absent child", ".md", "```sh\nstub group absent\n```", `has no command "absent"`, 2},
-		{"unknown flag", ".md", "`stub run file --bogus`", `has no flag "--bogus"`, 1},
-		{"hidden flag", ".md", "`stub run file --hidden`", `has no flag "--hidden"`, 1},
-		{"parent flag", ".md", "`stub group --local child ID`", `has no flag "--local"`, 1},
+		{"unknown flag", ".md", "`stub run file --bogus`", "unknown flag: --bogus", 1},
+		{"child flag before child", ".md", "`stub group --limit 50 child ID`", "", 0},
+		{"unknown clustered shorthand", ".md", "`stub group child ID -hZ`", "unknown shorthand flag", 1},
+		{"formatted wrapper output", ".sh", `info() { printf '%s\n' "$*"; }; info 'stub run' 'file --bogus'`, "unknown flag: --bogus", 1},
+		{"compact boolean global", ".md", "`compact run file --json`", "", 0},
+		{"compact valued global", ".md", "`compact --project foo group child ID`", "", 0},
+		{"flag-like prose", ".md", "`prose group`", "", 0},
+		{"prose flag absent", ".md", "`prose run file --ghost`", "unknown flag: --ghost", 1},
+		{"parent flag", ".md", "`stub group --local child ID`", "unknown flag: --local", 1},
 		{"inherited flag", ".md", "`stub --config cfg group child ID`", "", 0},
 		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", 1},
 		{"inline argument", ".md", "Use `stub run ~/Documents`.", "", 0},
 		{"alias", ".md", "`stub group alias <id> --limit <n>`", "", 0},
-		{"long assignment", ".md", "`stub group child ID --limit=anything`", "", 0},
-		{"short attached value", ".md", "`stub group child ID -n50`", "", 0},
-		{"short separated value", ".md", "`stub group child ID -n <n>`", "", 0},
+		{"long assignment", ".md", "`stub group child ID --limit=anything --bogus`", "unknown flag: --bogus", 1},
+		{"short attached value", ".md", "`stub group child ID -n50 --bogus`", "unknown flag: --bogus", 1},
 		{"positional hyphen", ".md", "`stub run -`", "", 0},
 		{"terminator", ".md", "`stub run -- --bogus`", "", 0},
 		{"table", ".md", "| Example |\n| --- |\n| `stub nope` |", `has no command "nope"`, 3},
 		{"shell prefix", ".sh", `echo 'Get started: stub nope'`, `has no command "nope"`, 1},
-		{"shell joined args", ".sh", `echo 'stub run' 'file --bogus'`, `has no flag "--bogus"`, 1},
+		{"shell joined args", ".sh", `echo 'stub run' 'file --bogus'`, "unknown flag: --bogus", 1},
 		{"shell wrapper", ".sh", `info() { echo "$*"; }; info 'Get started: stub nope'`, `has no command "nope"`, 1},
 		{"printf prefix", ".sh", `printf '%s\n' 'Get started: stub nope'`, `has no command "nope"`, 1},
 		{"powershell prefix", ".ps1", `Write-Host 'Get started: stub nope'`, `has no command "nope"`, 1},
+		{"powershell joined arguments", ".ps1", `Write-Host 'stub run' 'file --bogus'`, "unknown flag: --bogus", 1},
+		{"powershell separate output", ".ps1", `Write-Output 'stub run' 'stub nope'`, `has no command "nope"`, 1},
 		{"powershell wrapper", ".ps1", `function Write-Info($message) { Write-Host $message }; Write-Info 'stub nope'`, `has no command "nope"`, 1},
-		{"optional flag", ".md", "`stub group child <id> [--bogus]`", `has no flag "--bogus"`, 1},
+		{"optional flag", ".md", "`stub group child <id> [--bogus]`", "unknown flag: --bogus", 1},
 		{"alternative", ".md", "`stub group child|alias <id>`", "", 0},
 		{"absent alternative", ".md", "`stub group child|nope <id>`", `has no command "nope"`, 1},
-		{"continuation", ".md", "```sh\nstub group child ID \\\n --bogus\n```", `has no flag "--bogus"`, 2},
-		{"synopsis continuation", ".md", "```sh\nstub group child ID\n    [--bogus]\n```", `has no flag "--bogus"`, 2},
+		{"continuation", ".md", "```sh\nstub group child ID \\\n --bogus\n```", "unknown flag: --bogus", 2},
+		{"synopsis continuation", ".md", "```sh\nstub group child ID\n    [--bogus]\n```", "unknown flag: --bogus", 2},
 		{"shell operators", ".md", "`stub run file | cat && stub nope`", `has no command "nope"`, 1},
 		{"parse failure", ".md", "`stub run (`", "encountered", 1},
 		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", 0},
@@ -103,10 +110,15 @@ func TestReleaseCommands(t *testing.T) {
 		{"passing marker", ".md", "Not in the latest release yet\n\n`stub run file`", "passes; remove unreleased note", 3},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if test.ext == ".ps1" {
+				if _, err := exec.LookPath("pwsh"); err != nil {
+					t.Skip("pwsh is required for PowerShell installers")
+				}
+			}
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
 			require.NoError(t, os.WriteFile(file, []byte(test.content), 0o600))
 			var out, errOut bytes.Buffer
-			code := run(t.Context(), []string{"--archive", fixture, "--release", "v1.0.0", "--binary", "stub", "--binary", "stub-helper", file}, &out, &errOut)
+			code := run(t.Context(), []string{"--archive", fixture, "--release", "v1.0.0", "--binary", "stub", "--binary", "stub-helper", "--binary", "compact", "--binary", "prose", file}, &out, &errOut)
 			if strings.HasPrefix(test.finding, "passes;") {
 				require.Equal(t, 0, code, errOut.String())
 				require.Contains(t, out.String(), test.finding)

@@ -98,6 +98,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 			failure = err
 		} else {
 			printers := map[string]bool{"echo": true, "printf": true}
+			joiners := map[string]bool{"echo": true}
 			// Follow installer helpers to the output calls they wrap.
 			for changed := true; changed; {
 				changed = false
@@ -109,6 +110,12 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 					syntax.Walk(function.Body, func(node syntax.Node) bool {
 						if call, ok := node.(*syntax.CallExpr); ok && len(call.Args) > 0 && printers[call.Args[0].Lit()] {
 							printers[function.Name.Value], changed = true, true
+							syntax.Walk(call, func(node syntax.Node) bool {
+								if parameter, ok := node.(*syntax.ParamExp); ok && parameter.Param.Value == "*" {
+									joiners[function.Name.Value] = true
+								}
+								return true
+							})
 						}
 						return true
 					})
@@ -127,7 +134,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 				if !printers[name] {
 					return true
 				}
-				if len(call.Args) > 1 && (name == "printf" || name == "echo") {
+				if len(call.Args) > 1 && (name == "printf" || joiners[name]) {
 					var args []string
 					for _, word := range call.Args[1:] {
 						value, err := expand.Literal(shellExpansion, word)
@@ -137,7 +144,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 						}
 						args = append(args, value)
 					}
-					if name == "echo" {
+					if joiners[name] {
 						messages = append(messages, example{strings.Join(args, " "), int(call.Args[1].Pos().Line())})
 						return true
 					}

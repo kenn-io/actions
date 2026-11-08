@@ -23,12 +23,16 @@ do {
 $messages = @($tree.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object {
     $call = $_
     if (!$call.GetCommandName() -or !$printers[$call.GetCommandName()]) { return }
+    $parts = @()
     foreach ($element in $call.CommandElements | Select-Object -Skip 1) {
         if ($element -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $element -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
             $line = $element.Extent.StartLineNumber
             if ($element.Extent.Text.StartsWith('@')) { $line++ }
-            [pscustomobject]@{ text = $element.Value; line = $line }
+            $parts += [pscustomobject]@{ text = $element.Value; line = $line }
         }
     }
+    if ($call.GetCommandName() -eq 'Write-Host' -and $parts.Count) {
+        [pscustomobject]@{ text = $parts.text -join ' '; line = $parts[0].line }
+    } else { $parts }
 })
 ConvertTo-Json -InputObject $messages -Compress

@@ -4,20 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/spf13/pflag"
 )
 
-var flagLine = regexp.MustCompile(`(?m)^\s*(?:-([\w]),\s*)?(--[\w-]+)(?:[ =](\S+))? {2,}.*$`)
+var flagLine = regexp.MustCompile(`^\s*(?:-([\w])(?:,\s*|/))?(--[\w-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
 
 type usage struct {
 	path      []string
 	arguments bool
-	flags     map[string]bool
+	flags     *pflag.FlagSet
 }
 
 func help(ctx context.Context, binary string, path []string) (usage, error) {
@@ -38,7 +41,8 @@ func help(ctx context.Context, binary string, path []string) (usage, error) {
 }
 
 func describe(output string) (usage, error) {
-	u := usage{flags: map[string]bool{}}
+	u := usage{flags: pflag.NewFlagSet("release help", pflag.ContinueOnError)}
+	u.flags.SetOutput(io.Discard)
 	inUsage := false
 	for line := range strings.SplitSeq(output, "\n") {
 		if line == "Usage:" {
@@ -70,11 +74,40 @@ func describe(output string) (usage, error) {
 		}
 		u.arguments = u.arguments || (!child && arguments)
 	}
-	for _, match := range flagLine.FindAllStringSubmatch(output, -1) {
-		takesValue := match[3] != "" && !strings.Contains(match[3], "[=")
-		u.flags[match[2]] = takesValue
-		if match[1] != "" {
-			u.flags["-"+match[1]] = takesValue
+	inFlags := false
+	for line := range strings.SplitSeq(output, "\n") {
+		if line == "Flags:" || line == "Global Flags:" {
+			inFlags = true
+			continue
+		}
+		if line != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+			inFlags = false
+		}
+		flagLines := []string{line}
+		rest, compact := strings.CutPrefix(line, "Global: ")
+		if compact {
+			rest, _, _ = strings.Cut(rest, ". Details:")
+			flagLines = strings.Split(rest, ",")
+		}
+		if !inFlags && !compact {
+			continue
+		}
+		for _, line := range flagLines {
+			match := flagLine.FindStringSubmatch(line)
+			if match == nil {
+				if compact || strings.TrimSpace(line) != "" {
+					return u, errors.New("unsupported help: unrecognized flag line")
+				}
+				continue
+			}
+			name := strings.TrimPrefix(match[2], "--")
+			if u.flags.Lookup(name) != nil {
+				continue
+			}
+			u.flags.StringP(name, match[1], "", "")
+			if match[3] == "" || strings.Contains(match[3], "[=") {
+				u.flags.Lookup(name).NoOptDefVal = "true"
+			}
 		}
 	}
 	if len(u.path) == 0 {
@@ -88,33 +121,32 @@ func check(ctx context.Context, binary string, args []string) error {
 	if err != nil {
 		return err
 	}
-	var flags []string
-	positional, endFlags := false, false
+	// Match Cobra's Find behavior before validating flags against the final page.
 	for i := 0; i < len(args); i++ {
 		word := args[i]
 		if word == "--" {
-			positional, endFlags = true, true
-			continue
+			break
 		}
-		if !endFlags && word != "-" && strings.HasPrefix(word, "-") {
+		if word != "-" && strings.HasPrefix(word, "-") {
 			name, _, assigned := strings.Cut(word, "=")
-			attached := len(name) > 2 && name[1] != '-'
-			if attached {
-				name = name[:2]
+			var flag *pflag.Flag
+			if strings.HasPrefix(name, "--") {
+				flag = current.flags.Lookup(name[2:])
+			} else {
+				flag = current.flags.ShorthandLookup(name[1:2])
 			}
-			if current.flags[name] && !assigned && !attached && i+1 < len(args) {
+			if (strings.HasPrefix(name, "--") || len(name) == 2) && !assigned && (flag == nil || flag.NoOptDefVal == "") && i+1 < len(args) {
 				i++
 			}
-			flags = append(flags, name)
-			continue
-		}
-		if positional {
 			continue
 		}
 		if word == "help" && len(current.path) == 1 {
 			continue
 		}
 		child, err := help(ctx, binary, append(slices.Clone(current.path[1:]), word))
+		if err != nil && len(child.path) > len(current.path) {
+			return err
+		}
 		if err == nil && len(child.path) > len(current.path) {
 			current = child
 			continue
@@ -122,12 +154,8 @@ func check(ctx context.Context, binary string, args []string) error {
 		if !current.arguments {
 			return fmt.Errorf("has no command %q", word)
 		}
-		positional = true
+		break
 	}
-	for _, name := range flags {
-		if _, ok := current.flags[name]; !ok {
-			return fmt.Errorf("has no flag %q", name)
-		}
-	}
-	return nil
+	// String values avoid type checks; a sentinel permits a flag without a sample.
+	return current.flags.Parse(append(slices.Clone(args), ""))
 }

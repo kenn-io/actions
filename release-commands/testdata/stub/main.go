@@ -4,14 +4,20 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"os"
+	"path/filepath"
 )
 
 func main() {
-	root := &cobra.Command{Use: "stub", SilenceErrors: true, SilenceUsage: true}
+	root := &cobra.Command{Use: filepath.Base(os.Args[0]), SilenceErrors: true, SilenceUsage: true}
+	if root.Use == "prose" {
+		root.Long = "--meta key... optional metadata\n--ghost  prose"
+	}
 	root.PersistentFlags().String("config", "", "Config path")
-	root.Flags().Bool("version", false, "Version")
-	root.PersistentFlags().Bool("hidden", false, "Hidden flag")
-	_ = root.PersistentFlags().MarkHidden("hidden")
+	if root.Use == "compact" {
+		root.PersistentFlags().Bool("json", false, "JSON output")
+		root.PersistentFlags().String("project", "", "Project")
+		root.SetUsageTemplate("Usage:\n  {{.UseLine}}\n{{if .HasAvailableSubCommands}}  {{.CommandPath}} [command]\n{{end}}\nFlags:\n{{.LocalFlags.FlagUsages}}\n{{if .HasAvailableInheritedFlags}}Global: --json, --project <string>. Details: compact --help\n{{end}}")
+	}
 	group := &cobra.Command{Use: "group", Short: "Grouped commands", Run: func(cmd *cobra.Command, _ []string) { _ = cmd.Help() }}
 	group.Flags().Bool("local", false, "Parent flag")
 	child := &cobra.Command{Use: "child <id>", Aliases: []string{"alias"}, Short: "Read an ID", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}
