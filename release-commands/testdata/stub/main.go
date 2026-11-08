@@ -11,6 +11,7 @@ func main() {
 	root := &cobra.Command{Use: filepath.Base(os.Args[0]), SilenceErrors: true, SilenceUsage: true}
 	if root.Use == "prose" {
 		root.Long = "--meta key... optional metadata\n--ghost  prose"
+		root.SetUsageTemplate("Usage:\n  {{.UseLine}}\nFlags:\n  --indent-only  description\n{{.LocalFlags.FlagUsages}}")
 	}
 	root.PersistentFlags().String("config", "", "Config path")
 	if root.Use == "compact" {

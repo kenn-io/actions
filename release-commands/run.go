@@ -93,7 +93,8 @@ func describe(output string) (usage, error) {
 			continue
 		}
 		for _, line := range flagLines {
-			if !compact && !strings.HasPrefix(line, "  -") && !strings.HasPrefix(line, "      --") {
+			shorthand := strings.HasPrefix(line, "  -") && !strings.HasPrefix(line, "  --")
+			if !compact && !shorthand && !strings.HasPrefix(line, "      --") {
 				continue
 			}
 			line = strings.TrimSpace(line)

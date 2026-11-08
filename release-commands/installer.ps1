@@ -27,7 +27,12 @@ $messages = @($tree.FindAll({ param($node) $node -is [System.Management.Automati
     $named = if ($bound) { $bound.GetEnumerator() | Where-Object Key -ne 'Object' | ForEach-Object { $_.Value.Value } }
     $parts = @(foreach ($element in $call.CommandElements | Select-Object -Skip 1) {
         if ($named -contains $element) { continue }
-        $items = if ($element -is [System.Management.Automation.Language.ArrayExpressionAst] -or $element -is [System.Management.Automation.Language.ArrayLiteralAst]) { $element.FindAll({ param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true) } else { $element }
+        $items = if ($element -is [System.Management.Automation.Language.ArrayExpressionAst]) {
+            foreach ($statement in $element.SubExpression.Statements) {
+                if ($statement -is [System.Management.Automation.Language.PipelineAst] -and $statement.PipelineElements.Count -eq 1 -and $statement.PipelineElements[0] -is [System.Management.Automation.Language.CommandExpressionAst]) { $statement.PipelineElements[0].Expression }
+            }
+        } else { $element }
+        $items = foreach ($item in $items) { if ($item -is [System.Management.Automation.Language.ArrayLiteralAst]) { $item.Elements } else { $item } }
         foreach ($element in $items) {
             if ($element -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $element -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
                 $line = $element.Extent.StartLineNumber
