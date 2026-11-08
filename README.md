@@ -12,6 +12,36 @@ Reference each action at `@main`. The calling repository's
 `.github/workflows/actions.lock` pins it to a commit; run `gh actions-lock` to
 move that pin to the current `main`.
 
+## Renovate release-age preset
+
+[`renovate/release-age.json`](renovate/release-age.json) holds every
+third-party release for 7 days before Renovate opens or updates a pull request
+for it. Extend it from a repository's Renovate config:
+
+```json
+{
+  "extends": ["config:recommended", "github>kenn-io/actions//renovate/release-age"]
+}
+```
+
+The preset does the following:
+
+- Sets `minimumReleaseAge` to 7 days with `internalChecksFilter: "strict"`, so
+  Renovate creates no branch until a release has aged.
+- Requires a release timestamp. Renovate holds a release whose registry gives no
+  publish date, such as a Microsoft Container Registry image, until someone
+  updates it by hand.
+- Exempts kenn-io releases (`kenn-io/*` actions and tools, `go.kenn.io/*` and
+  `github.com/kenn-io/*` modules, `@kenn-io/*` packages, and
+  `ghcr.io/kenn-io/*` images) from the wait and from the repository's schedule.
+- Exempts security fixes from the wait and the schedule.
+- Turns off the Dependency Dashboard. Its "Pending Status Checks" checkboxes
+  open a pull request for an unaged release right away, which defeats the wait.
+
+A repository that needs the dashboard, for example for
+`dependencyDashboardApproval`, sets `"dependencyDashboard": true` itself. Do not
+tick its "Pending Status Checks" checkboxes.
+
 ## Development
 
 Build and test with `-trimpath` so every checkout and git worktree shares one
