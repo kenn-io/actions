@@ -116,6 +116,80 @@ jobs:
           working-directory: ${{ github.workspace }}
           annotations: "false"
 
+  release-commands:
+    name: release-commands
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Module-relative source paths let every checkout share Go build cache
+      # entries.
+      GOFLAGS: -trimpath
+    defaults:
+      run:
+        working-directory: release-commands
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: release-commands/go.mod
+          cache-dependency-path: release-commands/go.sum
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Check generated lint configuration
+        run: go run go.kenn.io/kit/cmd/kennlint@v0.38.0 config -check
+      - name: Lint
+        run: |
+          go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 \
+            custom --destination "$RUNNER_TEMP" --name custom-gcl
+          "$RUNNER_TEMP/custom-gcl" run ./...
+      - name: Build a fixture release
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-fixture/bin"
+          go build -o "$RUNNER_TEMP/release-fixture/stub" ./testdata/stub
+          tar -czf "$RUNNER_TEMP/release-fixture/stub.tar.gz" -C "$RUNNER_TEMP/release-fixture" stub
+          printf '`stub group child ID --limit <n>`\n' > "$GITHUB_WORKSPACE/release-commands/testdata/fixture.md"
+          # Supply a local release to exercise the composite without network access.
+          cat > "$RUNNER_TEMP/release-fixture/bin/gh" <<'SH'
+          #!/bin/bash
+          set -eu
+          case "$1 $2" in
+            'release view') echo v1.0.0 ;;
+            'release download') cp "$RUNNER_TEMP/release-fixture/stub.tar.gz" "${@: -1}/stub.tar.gz" ;;
+            *) exit 2 ;;
+          esac
+          SH
+          chmod +x "$RUNNER_TEMP/release-fixture/bin/gh"
+          echo "$RUNNER_TEMP/release-fixture/bin" >> "$GITHUB_PATH"
+      - uses: $/release-commands
+        with:
+          files: release-commands/testdata/fixture.md
+          binaries: stub
+          asset: stub.tar.gz
+      - name: Introduce fixture drift
+        run: printf '`stub nope`\n' > testdata/fixture.md
+      - uses: $/release-commands
+        id: drift
+        continue-on-error: true
+        with:
+          files: release-commands/testdata/fixture.md
+          binaries: stub
+          asset: stub.tar.gz
+      - name: Require drift failure
+        env:
+          DRIFT_OUTCOME: ${{ steps.drift.outcome }}
+        run: |
+          test "$DRIFT_OUTCOME" = failure
+          if go run . --archive "$RUNNER_TEMP/release-fixture/stub.tar.gz" --binary stub testdata/fixture.md > "$RUNNER_TEMP/drift.log" 2>&1; then
+            cat "$RUNNER_TEMP/drift.log"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/drift.log"
+          grep -Eq 'unknown command|no command' "$RUNNER_TEMP/drift.log"
+
   first-paint:
     name: first-paint
     runs-on: ubuntu-latest
