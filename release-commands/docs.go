@@ -3,11 +3,16 @@ package main
 import (
 	"bytes"
 	"cmp"
+	"context"
+	_ "embed"
+	"encoding/json/v2"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
@@ -29,6 +34,24 @@ type exampleBlock struct {
 type installerMessage struct {
 	Text string
 	Line int
+}
+
+//go:embed installer.ps1
+var powershellReader string
+
+func powershellStrings(source []byte) ([]installerMessage, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "pwsh", "-NoProfile", "-NonInteractive", "-Command", powershellReader)
+	cmd.Stdin = bytes.NewReader(source)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	data, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("PowerShell parser: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	var messages []installerMessage
+	return messages, json.Unmarshal(data, &messages)
 }
 
 const note = "Not in the latest release yet"
@@ -200,10 +223,11 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 	}
 	if filepath.Ext(file) != ".md" {
+		read := shellStrings
 		if filepath.Ext(file) == ".ps1" {
-			return nil, fmt.Errorf("%s: cannot read installer messages: PowerShell installers aren't supported", file)
+			read = powershellStrings
 		}
-		messages, err := shellStrings(source)
+		messages, err := read(source)
 		if err != nil {
 			return nil, fmt.Errorf("%s: cannot read installer messages: %w", file, err)
 		}

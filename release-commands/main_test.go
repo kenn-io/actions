@@ -70,7 +70,10 @@ func TestReleaseCommands(t *testing.T) {
 		binaries                    []string
 	}{
 		{"markdown command substitution", ".md", "```sh\nTOKEN=$(stub nope)\n```", `has no command "nope"`, 2, []string{"stub"}},
-		{"powershell installer", ".ps1", "Write-Host 'stub nope'", "PowerShell installers aren't supported", 0, []string{"stub"}},
+		{"powershell unknown command", ".ps1", "function Write-Info($msg) { Write-Host $msg -ForegroundColor Green }\nWrite-Info 'Next: stub nope'", `v1.0.0 has no command "nope"`, 2, []string{"stub"}},
+		{"powershell known command", ".ps1", "Write-Host '  stub unsafe file --help=false'", "", 0, []string{"stub"}},
+		{"powershell passing marker", ".ps1", "# Not in the latest release yet\nWrite-Host '  stub run file'", "passes; remove unreleased note", 2, []string{"stub"}},
+		{"powershell syntax error", ".ps1", "Write-Host 'stub run", "cannot read installer messages: PowerShell parser", 0, []string{"stub"}},
 		{"markdown parse escape", ".md", "`stub started (pid 12)`", "add <!-- release-commands: expected-failure -->", 1, []string{"stub"}},
 		{"installer passing marker", ".sh", "# release-commands: expected-failure\necho 'stub run file'", "passes; remove expected-failure marker", 2, []string{"stub"}},
 		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"`, 3, []string{"stub"}},
@@ -82,6 +85,7 @@ func TestReleaseCommands(t *testing.T) {
 		{"passing expected failure", ".md", "<!-- release-commands: expected-failure -->\n\n`stub run file`", "passes; remove expected-failure marker", 3, []string{"stub"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			requirePowerShell(t, test.ext)
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
 			require.NoError(t, os.WriteFile(file, []byte(test.content), 0o600))
 			var out, errOut bytes.Buffer
