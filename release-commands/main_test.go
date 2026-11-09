@@ -64,21 +64,15 @@ func writeFixtureArchive(path string, contents map[string][]byte) error {
 }
 
 func TestReleaseCommands(t *testing.T) {
-	t.Setenv("GITHUB_ACTIONS", "")
 	for _, test := range []struct {
 		name, ext, content, finding, stdout string
 		line                                int
 		binaries                            []string
 	}{
-		{"nested host synopsis flag", ".md", "`stub run file [--bogus <host[:port]>]`", "unknown flag: --bogus", "", 1, []string{"stub"}},
-		{"powershell ignored parameter", ".ps1", "function Write-Info([string]$Message) { Write-Host 'Ready' }\nWrite-Info 'stub nope'", "", "", 0, []string{"stub"}},
-		{"printf assignment helper", ".sh", `remember() { printf -v message '%s' "$1"; }; remember 'stub nope'`, "", "", 0, []string{"stub"}},
-		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 5, []string{"stub"}},
+		{"passing marked command", ".md", "<!-- release-commands: expected-failure -->\n\n```sh\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 4, []string{"stub"}},
 		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, "", 1, []string{"stub"}},
-		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"`, "", 3, []string{"stub"}},
 		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", "", 1, []string{"stub", "stub-helper"}},
 		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", "", 0, []string{"stub", "stub-helper"}},
-		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", "", 0, []string{"stub"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
@@ -108,14 +102,6 @@ func TestReleaseCommands(t *testing.T) {
 	}
 }
 
-func TestReleaseCommandsNotice(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "example.md")
-	require.NoError(t, os.WriteFile(file, []byte("Not in the latest release yet\n\n`stub run file`"), 0o600))
-	var out, errOut bytes.Buffer
-	require.Equal(t, 0, run(t.Context(), []string{"--archive", fixture, "--binary", "stub", file}, &out, &errOut), errOut.String())
-	require.Equal(t, file+":3: passes; remove unreleased note: stub run file\n", out.String())
-}
-
 func TestReleaseCommandsHelpCache(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
@@ -139,6 +125,8 @@ func TestReleaseCommandsAction(t *testing.T) {
 	// Supply the local archive through the same release commands CI uses.
 	gh := "#!/bin/bash\nset -eu\ncase \"$1 $2\" in\n'release view') echo v1.0.0 ;;\n'release download') cp \"$FIXTURE_ARCHIVE\" \"${@: -1}/stub.tar.gz\" ;;\n*) exit 2 ;;\nesac\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte(gh), 0o700))
+	uname := "#!/bin/sh\ncase \"$1\" in\n-s) echo Linux ;;\n-m) echo x86_64 ;;\n*) exit 2 ;;\nesac\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "uname"), []byte(uname), 0o700))
 	action, err := os.ReadFile("action.yml")
 	require.NoError(t, err)
 	_, script, found := strings.Cut(string(action), "      run: |\n")

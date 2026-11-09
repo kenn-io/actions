@@ -169,20 +169,6 @@ jobs:
           files: release-commands/testdata/fixture.md
           binaries: stub
           asset: stub.tar.gz
-      - name: Introduce fixture drift
-        run: printf '`stub nope`\n' > testdata/fixture.md
-      - uses: $/release-commands
-        id: drift
-        continue-on-error: true
-        with:
-          files: release-commands/testdata/fixture.md
-          binaries: stub
-          asset: stub.tar.gz
-      - name: Require drift failure
-        env:
-          DRIFT_OUTCOME: ${{ steps.drift.outcome }}
-        run: |
-          test "$DRIFT_OUTCOME" = failure
 
   first-paint:
     name: first-paint

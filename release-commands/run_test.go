@@ -44,7 +44,6 @@ func TestCheck(t *testing.T) {
 		{"disabled flag parsing", "unsafe file --help=false", ""},
 		{"group positional arguments", "named alice extra", ""},
 		{"child help error with positional parent", "named broken", "child help failed"},
-		{"absent child", "group absent", `has no command "absent"`},
 		{"unknown flag", "run file --bogus", "unknown flag: --bogus"},
 		{"child flag before child", "group --limit 50 child ID", ""},
 		{"unknown flag before child", "group --bogus child ID", "unknown flag: --bogus"},

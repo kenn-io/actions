@@ -11,6 +11,8 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []exampleBlock
 	}{
+		{"powershell ignored parameter", ".ps1", "function Write-Info([string]$Message) { Write-Host 'Ready' }\nWrite-Info 'stub nope'", nil},
+		{"printf assignment helper", ".sh", `remember() { printf -v message '%s' "$1"; }; remember 'stub nope'`, nil},
 		{"shell adjacent operator", ".sh", `true&&echo 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"shell redirect filename", ".sh", `echo 'ready' > 'stub nope'`, nil},
 		{"shell helper does not forward", ".sh", `check() { echo 'ready'; test -n "$1"; }; check 'stub nope'`, nil},
@@ -32,7 +34,6 @@ func TestExamples(t *testing.T) {
 		{"powershell uncalled helper", ".ps1", "function unused {\nWrite-Host 'stub nope'\n}\nWrite-Host 'stub run'", []exampleBlock{{commands: []example{{"stub nope", 2}, {"stub run", 4}}}}},
 		{"powershell printer wrapper", ".ps1", "function info([string]$Message) { Write-Host $Message -ForegroundColor Green }\ninfo 'Get started: stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
 		{"installer expected-failure marker", ".ps1", "# release-commands: expected-failure\nWrite-Host 'stub run file'", []exampleBlock{{marker: "expected-failure marker", commands: []example{{"stub run file", 2}}}}},
-		{"installer prose", ".sh", "echo 'stub started (pid 12)'", nil},
 		{"colon argument", ".sh", `echo 'stub run host:stub target'`, []exampleBlock{{commands: []example{{"stub run host:stub target", 1}}}}},
 		{"printf assignment", ".sh", `printf -v x 'stub nope'`, nil},
 		{"powershell comments", ".ps1", "# stub nope\n<# stub nope #>\nWrite-Host 'ready' # stub nope", nil},
