@@ -11,16 +11,8 @@ func TestCommands(t *testing.T) {
 		name, source string
 		want         [][]string
 	}{
-		{"substituted child", `stub group "$(printf child)" ID`, [][]string{{"stub", "group", "$", "ID"}, {"printf", "child"}}},
-		{"escaped executable and command", `st\ub pl\ain --bogus`, [][]string{{"stub", "plain", "--bogus"}}},
-		{"quoted backslashes", `stub plain 'C:\new' "C:\new" C:\\new`, [][]string{{"stub", "plain", `C:\new`, `C:\new`, `C:\new`}}},
-		{"escaped comment whitespace", `stub plain path\ #part --bogus`, [][]string{{"stub", "plain", "path #part", "--bogus"}}},
 		{"nested host placeholder", "docbank mcp [--transport stdio|http] [--listen <ip:port>] [--allowed-host <host[:port]>]", [][]string{{"docbank", "mcp", "--transport", "stdio", "--listen", "<ip:port>", "--allowed-host", "<host[:port]>"}, {"docbank", "mcp", "--transport", "http", "--listen", "<ip:port>", "--allowed-host", "<host[:port]>"}}},
-		{"multiline comment", "if true; then # note\n  stub nope\nfi", [][]string{{"true"}, {"stub", "nope"}}},
-		{"quoted synopsis alternative", `stub run "a b"|c --bogus`, [][]string{{"stub", "run", "a b", "--bogus"}, {"stub", "run", "c", "--bogus"}}},
 		{"symbolic variables", `stub group $child`, [][]string{{"stub", "group", "$child"}}},
-		{"synopsis comment", "stub group #json|yaml <broken", [][]string{{"stub", "group"}}},
-		{"nested quoted hash", `stub run "$(printf "%s" "file #1")" --bogus`, [][]string{{"stub", "run", "$", "--bogus"}, {"printf", "%s", "file #1"}}},
 		{"quoted comment", `stub run '#json|yaml'`, [][]string{{"stub", "run", "#json|yaml"}}},
 		{"generic command placeholder", "stub group <command> --local", [][]string{{"stub", "group", "--local"}}},
 		{"generic subcommand placeholder", "stub group <subcommand> --local", [][]string{{"stub", "group", "--local"}}},
@@ -28,8 +20,6 @@ func TestCommands(t *testing.T) {
 		{"spaced synopsis alternatives", "stub run file [--config cfg | --bogus]", [][]string{{"stub", "run", "file", "--config", "cfg"}, {"stub", "run", "file", "--bogus"}}},
 		{"shell operators", "stub run file | cat && stub nope", [][]string{{"stub", "run", "file"}, {"cat"}, {"stub", "nope"}}},
 		{"parse failure", "FOO=1 stub run (", nil},
-		{"command substitution", "TOKEN=$(stub nope)", [][]string{{"stub", "nope"}}},
-		{"process substitution", "stub completion bash <(stub completion bash)", [][]string{{"stub", "completion", "bash", "$"}, {"stub", "completion", "bash"}}},
 		{"cobra placeholders", "stub serve [flags] [command]", [][]string{{"stub", "serve"}}},
 		{"quoted ellipsis value", `stub plain --log.level "..." [--no-such-flag] ... …`, [][]string{{"stub", "plain", "--log.level", "...", "--no-such-flag"}}},
 	} {

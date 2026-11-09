@@ -28,7 +28,6 @@ func TestDescribe(t *testing.T) {
 		{name: "roborev compact global flags", output: "Usage:\n  roborev show [flags]\nGlobal: --server <string>, -v/--verbose. Details: roborev --help\n", path: []string{"roborev", "show"}, arguments: true, parse: [][]string{{"--server", "example", "-v"}}},
 		{name: "prose flag absent", output: "      --ghost  prose\n\nUsage:\n  prose [flags]\nFlags:\n  -h, --help  help for prose\n", absent: "ghost", path: []string{"prose"}, arguments: true},
 		{name: "wrapped description absent", output: "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    --description-only  continuation\n", absent: "description-only", path: []string{"stub", "group", "child"}, arguments: true},
-		{name: "unsupported flag row", output: "Usage:\n  stub [flags]\nFlags:\n  --quiet   Quiet output\n", finding: "unsupported help"},
 		{name: "unsupported flag section", output: "Usage:\n  stub [flags]\nPersistent Flags:\n      --quiet   Quiet output\n", finding: "unsupported help: unrecognized flag section"},
 		{name: "msgvault-calendar-create", file: "msgvault-calendar-create", globals: root.flags, path: []string{"msgvault", "calendar", "create"}, arguments: true, parse: [][]string{{"--account", "example-account"}, {"--json"}, {"--home", "example-home"}, {"--local"}, {"--agent-url", "https://example.com"}, {"--verbose"}}},
 		{name: "kata", file: "kata", path: []string{"kata"}, parse: [][]string{{"--json"}, {"--format", "agent"}, {"--quiet"}}},
@@ -65,7 +64,6 @@ func TestCheck(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, arguments, finding string }{
 		{"disabled flag parsing", "unsafe file --help=false", ""},
-		{"help target after terminator", "help -- group nope", `has no command "nope"`},
 		{"help rejects target command flag", "help plain --log.level debug", "unknown flag: --log.level"},
 		{"count flag then command", "-v nope", `has no command "nope"`},
 		{"lowercase symbolic child", "group $child", ""},

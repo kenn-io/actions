@@ -99,7 +99,7 @@ func fileExamples(file string, binaries []string) ([]exampleBlock, error) {
 		return nil, err
 	}
 	blocks, err := examples(file, data, binaries)
-	if err == nil && len(blocks) == 0 && !slices.Contains(markdownExtensions, strings.ToLower(filepath.Ext(file))) {
+	if err == nil && len(blocks) == 0 && !strings.EqualFold(filepath.Ext(file), ".md") {
 		return nil, fmt.Errorf("%s: no commands for %s", file, strings.Join(binaries, ", "))
 	}
 	return blocks, err

@@ -126,18 +126,8 @@ func describe(output string, root *pflag.FlagSet) (usage, error) {
 		}
 		for _, line := range flagLines {
 			shorthand := strings.HasPrefix(line, "  -") && !strings.HasPrefix(line, "  --")
-			if !compact && !shorthand && !strings.HasPrefix(line, "      --") {
-				if strings.HasPrefix(strings.TrimSpace(line), "--") && len(line)-len(strings.TrimLeft(line, " \t")) < 6 {
-					return u, errors.New("unsupported help: unrecognized flag line")
-				}
-				continue
-			}
-			line = strings.TrimSpace(line)
-			match := flagLine.FindStringSubmatch(line)
-			if match == nil {
-				if trimmed := strings.TrimSpace(line); compact || strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "- ") {
-					return u, errors.New("unsupported help: unrecognized flag line")
-				}
+			match := flagLine.FindStringSubmatch(strings.TrimSpace(line))
+			if match == nil || !compact && !shorthand && !strings.HasPrefix(line, "      --") {
 				continue
 			}
 			name := strings.TrimPrefix(match[2], "--")
@@ -171,9 +161,6 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 	for i := 0; i < len(args); i++ {
 		word := args[i]
 		if word == "--" {
-			if helpFlags != nil {
-				continue
-			}
 			break
 		}
 		if word != "-" && strings.HasPrefix(word, "-") {

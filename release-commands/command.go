@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"slices"
 	"strings"
 	"unicode"
@@ -11,8 +10,6 @@ import (
 )
 
 var shellExpansion = &expand.Config{
-	CmdSubst:  func(w io.Writer, _ *syntax.CmdSubst) error { _, err := io.WriteString(w, "$"); return err },
-	ProcSubst: func(*syntax.ProcSubst) (string, error) { return "$", nil },
 	Env: expand.FuncEnviron(func(name string) string {
 		if name == "IFS" {
 			return ""
@@ -23,14 +20,6 @@ var shellExpansion = &expand.Config{
 
 // Synopsis expansion preserves shell quoting for the shell parser that follows it.
 func commands(line string) ([][]string, error) {
-	for start := commentIndex(line); start < len(line); start = commentIndex(line) {
-		end := strings.IndexByte(line[start:], '\n')
-		if end < 0 {
-			line = line[:start]
-		} else {
-			line = line[:start] + line[start+end:]
-		}
-	}
 	// Protect only unquoted placeholders from shell redirection parsing.
 	positions := punctuation(line)
 	for _, start := range slices.Backward(positions) {
@@ -91,14 +80,12 @@ func commands(line string) ([][]string, error) {
 	return result, nil
 }
 
-// Only unquoted, unescaped punctuation participates in synopsis syntax.
+// Only unquoted punctuation participates in synopsis syntax.
 func punctuation(source string) []int {
 	var positions []int
 	var quote byte
-	for i := 0; i < len(source); i++ {
+	for i := range len(source) {
 		switch c := source[i]; {
-		case c == '\\' && quote != '\'':
-			i++
 		case c == quote:
 			quote = 0
 		case (c == '\'' || c == '"') && quote == 0:
