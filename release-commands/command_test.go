@@ -17,6 +17,8 @@ func TestCommands(t *testing.T) {
 		{"synopsis continuation", "stub group child ID [--bogus]", [][]string{{"stub", "group", "child", "ID", "--bogus"}}},
 		{"shell operators", "stub run file | cat && stub nope", [][]string{{"stub", "run", "file"}, {"cat"}, {"stub", "nope"}}},
 		{"parse failure", "FOO=1 stub run (", nil},
+		{"process substitution", "stub completion bash <(stub completion bash)", [][]string{{"stub", "completion", "bash", "0"}, {"stub", "completion", "bash"}}},
+		{"cobra placeholders", "stub serve [flags] [command]", [][]string{{"stub", "serve"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := commands(test.source)

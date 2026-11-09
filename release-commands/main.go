@@ -51,6 +51,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return 1
 	}
 	failed := false
+	reported := map[string]bool{}
 	for _, file := range flags.Args() {
 		data, err := os.ReadFile(file)
 		var blocks []exampleBlock
@@ -77,6 +78,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 					binary := paths[args[0]]
 					if binary == "" {
 						problem = fmt.Sprintf("%s: not in %s", args[0], filepath.Base(*archive))
+						reported[args[0]] = reported[args[0]] || block.marker == ""
 						break
 					}
 					if err := check(ctx, binary, args[1:]); err != nil {
@@ -94,6 +96,12 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 				first := block.commands[0]
 				fmt.Fprintf(out, "%s:%d: passes; remove %s: %s\n", file, first.line, block.marker, first.text)
 			}
+		}
+	}
+	for _, name := range *binaries {
+		if paths[name] == "" && !reported[name] {
+			fmt.Fprintf(errOut, "%s: not in %s\n", name, filepath.Base(*archive))
+			failed = true
 		}
 	}
 	if failed {

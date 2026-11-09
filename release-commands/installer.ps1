@@ -8,6 +8,12 @@ if ($errors.Count) {
     exit 1
 }
 $printers = @{ 'Write-Host' = $true; 'Write-Output' = $true; 'echo' = $true; 'Write-Error' = $true; 'Write-Warning' = $true; 'Write-Information' = $true }
+function StaticString($expression) {
+    if ($expression -is [System.Management.Automation.Language.ParenExpressionAst] -and $expression.Pipeline.PipelineElements.Count -eq 1) { $expression = $expression.Pipeline.PipelineElements[0].Expression }
+    if ($expression -is [System.Management.Automation.Language.StringConstantExpressionAst]) { return $expression.Value }
+    if ($expression -is [System.Management.Automation.Language.BinaryExpressionAst] -and $expression.Operator -eq 'Plus') { $left, $right = (StaticString $expression.Left), (StaticString $expression.Right) }
+    if ($null -ne $left -and $null -ne $right) { $left + $right }
+}
 $functions = $tree.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
 do {
     $changed = $false
@@ -34,10 +40,12 @@ $messages = @($tree.FindAll({ param($node) $node -is [System.Management.Automati
         } else { $element }
         $items = foreach ($item in $items) { if ($item -is [System.Management.Automation.Language.ArrayLiteralAst]) { $item.Elements } else { $item } }
         foreach ($element in $items) {
-            if ($element -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $element -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
+            $value = StaticString $element
+            if ($element -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) { $value = $element.Value }
+            if ($null -ne $value) {
                 $line = $element.Extent.StartLineNumber
                 if ($element.Extent.Text.StartsWith('@')) { $line++ }
-                [pscustomobject]@{ text = $element.Value; line = $line }
+                [pscustomobject]@{ text = $value; line = $line }
             }
         }
     })

@@ -11,8 +11,9 @@ import (
 )
 
 var shellExpansion = &expand.Config{
-	CmdSubst: func(w io.Writer, _ *syntax.CmdSubst) error { _, err := io.WriteString(w, "0"); return err },
-	Env:      expand.FuncEnviron(func(name string) string { return "$" + name }),
+	CmdSubst:  func(w io.Writer, _ *syntax.CmdSubst) error { _, err := io.WriteString(w, "0"); return err },
+	ProcSubst: func(*syntax.ProcSubst) (string, error) { return "0", nil },
+	Env:       expand.FuncEnviron(func(name string) string { return "$" + name }),
 }
 
 // Synopsis expansion preserves shell quoting for the shell parser that follows it.
@@ -20,17 +21,19 @@ func commands(line string) ([][]string, error) {
 	// Protect only unquoted placeholders from shell redirection parsing.
 	positions := punctuation(line)
 	for _, start := range slices.Backward(positions) {
-		if line[start] != '<' {
+		if line[start] != '<' && line[start] != '[' {
 			continue
 		}
-		end := strings.IndexByte(line[start:], '>')
+		end := strings.IndexAny(line[start:], ">]")
 		if end < 0 || strings.ContainsAny(line[start+1:start+end], " \t\n<>") {
 			continue
 		}
 		value := line[start : start+end+1]
 		replacement := "0"
-		if value == "<command>" || value == "<subcommand>" {
+		if value == "<command>" || value == "<subcommand>" || value == "[flags]" || value == "[command]" {
 			replacement = ""
+		} else if line[start] == '[' {
+			continue
 		}
 		line = line[:start] + replacement + line[start+end+1:]
 	}

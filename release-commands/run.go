@@ -37,13 +37,17 @@ func help(ctx context.Context, binary string, path []string) (usage, error) {
 	if err != nil {
 		return usage{}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(output)))
 	}
-	return describe(string(output))
+	u, err := describe(string(output))
+	if len(u.path) > len(path)+1 {
+		u.path, u.arguments = u.path[:len(path)+1], true
+	}
+	return u, err
 }
 
 func describe(output string) (usage, error) {
 	u := usage{flags: pflag.NewFlagSet("release help", pflag.ContinueOnError)}
 	u.flags.SetOutput(io.Discard)
-	inUsage := false
+	inUsage, hasChildren := false, false
 	for line := range strings.SplitSeq(output, "\n") {
 		if line == "Usage:" {
 			inUsage = true
@@ -73,7 +77,9 @@ func describe(output string) (usage, error) {
 			u.path = path
 		}
 		u.arguments = u.arguments || (!child && arguments)
+		hasChildren = hasChildren || child
 	}
+	u.arguments = u.arguments || !hasChildren
 	inFlags := false
 	for line := range strings.SplitSeq(output, "\n") {
 		if line == "Flags:" || line == "Global Flags:" {

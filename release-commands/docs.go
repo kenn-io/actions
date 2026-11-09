@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,6 +60,153 @@ func installerStrings(source string) ([]example, error) {
 
 const note = "Not in the latest release yet"
 
+// shellEnv gives a printer helper its caller's arguments. Other variables
+// inside a helper, such as colors, print nothing; outside one they stay visible.
+type shellEnv struct {
+	args   []example
+	helper bool
+}
+
+func (env shellEnv) Get(name string) expand.Variable {
+	values := make([]string, len(env.args))
+	for i, arg := range env.args {
+		values[i] = arg.text
+	}
+	if index, err := strconv.Atoi(name); env.helper && err == nil && index > 0 && index <= len(values) {
+		return expand.Variable{Set: true, Kind: expand.String, Str: values[index-1]}
+	}
+	if env.helper && (name == "@" || name == "*") {
+		return expand.Variable{Set: true, Kind: expand.Indexed, List: values}
+	}
+	if env.helper || name == "IFS" {
+		return expand.Variable{}
+	}
+	return expand.Variable{Set: true, Kind: expand.String, Str: "$" + name}
+}
+
+func (shellEnv) Each(func(string, expand.Variable) bool) {}
+
+func shellStrings(source []byte) ([]example, error) {
+	tree, err := syntax.NewParser().Parse(bytes.NewReader(source), "")
+	if err != nil {
+		return nil, err
+	}
+	functions := map[string]*syntax.FuncDecl{}
+	syntax.Walk(tree, func(node syntax.Node) bool {
+		if function, ok := node.(*syntax.FuncDecl); ok {
+			functions[function.Name.Value] = function
+		}
+		return true
+	})
+	var messages []example
+	// Escapes expanded by echo or printf split lines in place; a physical newline,
+	// carried as NUL, also moves to the next source line.
+	emit := func(value string, line int) {
+		for text := range strings.SplitSeq(value, "\n") {
+			messages = append(messages, example{strings.ReplaceAll(text, "\x00", "\n"), line})
+			line += strings.Count(text, "\x00")
+		}
+	}
+	var printCall func(*syntax.CallExpr, shellEnv, int) error
+	printCall = func(call *syntax.CallExpr, env shellEnv, depth int) error {
+		if len(call.Args) == 0 {
+			return nil
+		}
+		name := call.Args[0].Lit()
+		function := functions[name]
+		if name != "echo" && name != "printf" && function == nil {
+			return nil
+		}
+		if depth > len(functions) {
+			return fmt.Errorf("recursive printer helper %s", name)
+		}
+		config := *shellExpansion
+		config.Env = env
+		var args []example
+		for _, word := range call.Args[1:] {
+			values, err := expand.Fields(&config, word)
+			if err != nil {
+				return err
+			}
+			for _, value := range values {
+				line := int(word.Pos().Line())
+				for _, caller := range env.args {
+					if caller.text != "" && strings.Contains(value, caller.text) {
+						line = caller.line
+						break
+					}
+				}
+				args = append(args, example{strings.ReplaceAll(value, "\n", "\x00"), line})
+			}
+		}
+		if function != nil {
+			var failure error
+			syntax.Walk(function.Body, func(node syntax.Node) bool {
+				if _, substitution := node.(*syntax.CmdSubst); substitution {
+					return false
+				}
+				if nested, ok := node.(*syntax.CallExpr); ok && failure == nil {
+					failure = printCall(nested, shellEnv{args, true}, depth+1)
+				}
+				return failure == nil
+			})
+			return failure
+		}
+		escaped := false
+		for name == "echo" && len(args) > 0 && len(args[0].text) > 1 && strings.TrimRight(args[0].text, "neE") == "-" {
+			if last := strings.LastIndexAny(args[0].text, "eE"); last >= 0 {
+				escaped = args[0].text[last] == 'e'
+			}
+			args = args[1:]
+		}
+		if len(args) == 0 {
+			return nil
+		}
+		values := make([]string, len(args))
+		for i, arg := range args {
+			values[i] = arg.text
+		}
+		if name == "echo" {
+			value := strings.Join(values, " ")
+			if escaped {
+				value, _, err = expand.Format(&config, "%b", []string{value})
+			}
+			emit(value, args[0].line)
+			return err
+		}
+		if values[0] == "--" && len(values) > 1 {
+			values, args = values[1:], args[1:]
+		}
+		format, line := values[0], args[0].line
+		values, args = values[1:], args[1:]
+		for {
+			value, used, err := expand.Format(&config, format, values)
+			if err != nil {
+				return err
+			}
+			if used > 0 {
+				line = args[0].line
+			}
+			emit(value, line)
+			values, args = values[used:], args[used:]
+			if used == 0 || len(values) == 0 {
+				return nil
+			}
+		}
+	}
+	syntax.Walk(tree, func(node syntax.Node) bool {
+		switch node.(type) {
+		case *syntax.FuncDecl, *syntax.CmdSubst:
+			return false
+		}
+		if call, ok := node.(*syntax.CallExpr); ok && err == nil {
+			err = printCall(call, shellEnv{}, 0)
+		}
+		return err == nil
+	})
+	return messages, err
+}
+
 // visible returns the text a reader sees in node, so emphasis around the note still counts.
 func visible(node ast.Node, source []byte) string {
 	var words strings.Builder
@@ -101,120 +249,8 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		var failure error
 		if filepath.Ext(file) == ".ps1" {
 			messages, failure = installerStrings(string(source))
-		} else if tree, err := syntax.NewParser().Parse(bytes.NewReader(source), ""); err != nil {
-			failure = err
 		} else {
-			printers := map[string]bool{"echo": true, "printf": true}
-			joiners := map[string]bool{"echo": true}
-			escapes := map[string]bool{}
-			// Follow installer helpers to the output calls they wrap.
-			for changed := true; changed; {
-				changed = false
-				syntax.Walk(tree, func(node syntax.Node) bool {
-					function, ok := node.(*syntax.FuncDecl)
-					if !ok || printers[function.Name.Value] {
-						return true
-					}
-					syntax.Walk(function.Body, func(node syntax.Node) bool {
-						if call, ok := node.(*syntax.CallExpr); ok && len(call.Args) > 0 && printers[call.Args[0].Lit()] {
-							printers[function.Name.Value], changed = true, true
-							escapes[function.Name.Value] = escapes[call.Args[0].Lit()]
-							for _, word := range call.Args[1:] {
-								option := word.Lit()
-								if call.Args[0].Lit() != "echo" || len(option) < 2 || strings.TrimRight(option, "neE") != "-" {
-									break
-								}
-								if last := strings.LastIndexAny(option, "eE"); last >= 0 {
-									escapes[function.Name.Value] = option[last] == 'e'
-								}
-							}
-							syntax.Walk(call, func(node syntax.Node) bool {
-								if parameter, ok := node.(*syntax.ParamExp); ok && parameter.Param.Value == "*" {
-									joiners[function.Name.Value] = true
-								}
-								return true
-							})
-						}
-						return true
-					})
-					return false
-				})
-			}
-			syntax.Walk(tree, func(node syntax.Node) bool {
-				if _, substitution := node.(*syntax.CmdSubst); substitution {
-					return false
-				}
-				call, ok := node.(*syntax.CallExpr)
-				if !ok || len(call.Args) == 0 {
-					return true
-				}
-				name, _ := expand.Literal(shellExpansion, call.Args[0])
-				if !printers[name] {
-					return true
-				}
-				if len(call.Args) > 1 && (name == "printf" || joiners[name] || escapes[name]) {
-					var args []string
-					escaped := escapes[name]
-					for _, word := range call.Args[1:] {
-						value, err := expand.Literal(shellExpansion, word)
-						if err != nil {
-							failure = cmp.Or(failure, err)
-							return false
-						}
-						// echo reads leading option words such as -n or -En before printing the rest.
-						if name != "echo" || len(args) > 0 || len(value) < 2 || strings.TrimRight(value, "neE") != "-" {
-							args = append(args, value)
-						} else if last := strings.LastIndexAny(value, "eE"); last >= 0 {
-							escaped = value[last] == 'e'
-						}
-					}
-					if joiners[name] || escaped {
-						value := strings.Join(args, " ")
-						if escaped {
-							var err error
-							value, _, err = expand.Format(shellExpansion, "%b", []string{value})
-							failure = cmp.Or(failure, err)
-						}
-						for line := range strings.SplitSeq(value, "\n") {
-							messages = append(messages, example{line, int(call.Pos().Line())})
-						}
-						return true
-					}
-					if args[0] == "--" && len(args) > 1 {
-						args = args[1:]
-					}
-					format, args := args[0], args[1:]
-					for {
-						value, used, err := expand.Format(shellExpansion, format, args)
-						if err != nil {
-							failure = cmp.Or(failure, err)
-							break
-						}
-						for line := range strings.SplitSeq(value, "\n") {
-							messages = append(messages, example{line, int(call.Args[1].Pos().Line())})
-						}
-						args = args[used:]
-						if used == 0 || len(args) == 0 {
-							break
-						}
-					}
-					return true
-				}
-				for _, word := range call.Args[1:] {
-					if len(word.Parts) != 1 {
-						continue
-					}
-					switch word.Parts[0].(type) {
-					case *syntax.SglQuoted, *syntax.DblQuoted:
-						value, err := expand.Literal(shellExpansion, word)
-						failure = cmp.Or(failure, err)
-						if err == nil {
-							messages = append(messages, example{value, int(word.Pos().Line())})
-						}
-					}
-				}
-				return true
-			})
+			messages, failure = shellStrings(source)
 		}
 		if failure != nil {
 			return nil, fmt.Errorf("%s: cannot read installer messages: %w", file, failure)

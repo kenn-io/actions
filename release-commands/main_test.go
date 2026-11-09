@@ -79,7 +79,11 @@ func TestReleaseCommands(t *testing.T) {
 		{"malformed shorthand", ".md", "`stub run file -=oops`", "unknown shorthand flag: '='", 1},
 		{"parent flag", ".md", "`stub group --local child ID`", "unknown flag: --local", 1},
 		{"inherited flag", ".md", "`stub --config cfg group child ID`", "", 0},
+		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0},
 		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", 1},
+		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "stub-helper: not in", 0},
+		{"leaf arguments", ".md", "`stub plain somefile`", "", 0},
+		{"group argument synopsis", ".md", "`stub named child`", "", 0},
 		{"long assignment", ".md", "`stub group --limit=anything child ID`", "", 0},
 		{"short attached value", ".md", "`stub group -n50 child ID`", "", 0},
 		{"terminator", ".md", "`stub group -- --bogus nope`", "", 0},
@@ -93,7 +97,15 @@ func TestReleaseCommands(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
 			require.NoError(t, os.WriteFile(file, []byte(test.content), 0o600))
 			var out, errOut bytes.Buffer
-			code := run(t.Context(), []string{"--archive", fixture, "--release", "v1.0.0", "--binary", "stub", "--binary", "stub-helper", file}, &out, &errOut)
+			binary := "stub"
+			if test.name == "misconfigured binary" {
+				binary = "stbu"
+			}
+			args := []string{"--archive", fixture, "--release", "v1.0.0", "--binary", binary}
+			if strings.Contains(test.content, "stub-helper") {
+				args = append(args, "--binary", "stub-helper")
+			}
+			code := run(t.Context(), append(args, file), &out, &errOut)
 			if strings.HasPrefix(test.finding, "passes;") {
 				require.Equal(t, 0, code, errOut.String())
 				require.Contains(t, out.String(), test.finding)
