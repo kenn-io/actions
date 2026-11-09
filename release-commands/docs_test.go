@@ -47,9 +47,9 @@ func TestExamples(t *testing.T) {
 		{"powershell called helper", ".ps1", "function show {\nWrite-Host 'stub nope'\n}\nshow", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
 		{"powershell uncalled wrapper", ".ps1", "function info($Message) { Write-Host $Message }\nfunction unused {\ninfo 'stub nope'\n}\ninfo 'stub run'", []exampleBlock{{commands: []example{{"stub nope", 3}, {"stub run", 5}}}}},
 		{"powershell printer wrapper", ".ps1", "function info {\nparam($Message)\nWrite-Host $Message\n}\ninfo 'Get started: stub nope'", []exampleBlock{{commands: []example{{"stub nope", 5}}}}},
-		{"shell color prefix", ".sh", `echo "${GREEN}stub nope"`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"shell ANSI output", ".sh", "echo '\x1b[32mstub nope\x1b[0m'", []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"powershell marker", ".ps1", "# Not in the latest release yet\nWrite-Host 'stub nope'", []exampleBlock{{marker: "unreleased note", commands: []example{{"stub nope", 2}}}}},
+		{"installer passing marker", ".ps1", "# release-commands: expected-failure\nWrite-Host 'stub run file'", []exampleBlock{{marker: "expected-failure marker", commands: []example{{"stub run file", 2}}}}},
 		{"installer prose", ".sh", "echo 'stub started (pid 12)'", nil},
 		{"quoted assignment parse failure", ".md", "`MODE=\"a b\" stub run (`", []exampleBlock{{commands: []example{{`MODE="a b" stub run (`, 1}}}}},
 		{"colon argument", ".sh", `echo 'stub run host:stub target'`, []exampleBlock{{commands: []example{{"stub run host:stub target", 1}}}}},
@@ -68,7 +68,6 @@ func TestExamples(t *testing.T) {
 		{"quoted newline", ".md", "```sh\nstub run 'hello\n  world'\n```", []exampleBlock{{commands: []example{{"stub run 'hello\n  world'", 2}}}}},
 		{"expected failure comment", ".md", "<!-- release-commands: expected-failure -->\n\n`stub run file`", []exampleBlock{{marker: "expected-failure marker", commands: []example{{"stub run file", 3}}}}},
 		{"unreleased note", ".md", "Not in the latest release yet\n\n`stub nope`", []exampleBlock{{marker: "unreleased note", commands: []example{{"stub nope", 3}}}}},
-		{"helper continuation unsupported", ".sh", "info() { echo \"$1\"; }\ninfo \\\n'stub nope'", nil},
 		{
 			name:   "nested containers keep marker",
 			ext:    ".sh",

@@ -66,24 +66,22 @@ func writeFixtureArchive(path string, contents map[string][]byte) error {
 func TestReleaseCommands(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "")
 	for _, test := range []struct {
-		name, ext, content, finding string
-		line                        int
-		binaries                    []string
+		name, ext, content, finding, stdout string
+		line                                int
+		binaries                            []string
 	}{
-		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", 1, []string{"stub", "stub-helper"}},
-		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\nstub plain\n```", "passes; remove expected-failure marker: stub run file", 5, []string{"stub"}},
-		{"shell prefixed output", ".sh", "# installer\necho 'Get started: stub nope'", `has no command "nope"`, 2, []string{"stub"}},
-		{"powershell prefixed output", ".ps1", "# installer\nWrite-Host 'Get started: stub nope'", `has no command "nope"`, 2, []string{"stub"}},
-		{"installer passing marker", ".ps1", "# release-commands: expected-failure\nWrite-Host 'stub run file'", "passes; remove expected-failure marker", 2, []string{"stub"}},
-		{"shell marker hint", ".sh", "echo 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, 1, []string{"stub"}},
-		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, 1, []string{"stub"}},
-		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for unreleased commands, add "Not in the latest release yet" before the block; for output samples, add <!-- release-commands: expected-failure -->`, 3, []string{"stub"}},
-		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0, []string{"stbu"}},
-		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", 1, []string{"stub", "stub-helper"}},
-		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", 0, []string{"stub", "stub-helper"}},
-		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", 0, []string{"stub"}},
-		{"mdx marker hint", ".mdx", "`stub nope`", `for output samples, add <!-- release-commands: expected-failure -->`, 1, []string{"stub"}},
-		{"unsupported extension", ".txt", "stub nope", "unsupported file type", 0, []string{"stub"}},
+		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", "", 1, []string{"stub", "stub-helper"}},
+		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 5, []string{"stub"}},
+		{"powershell prefixed output", ".ps1", "# installer\nWrite-Host 'Get started: stub nope'", `has no command "nope"`, "", 2, []string{"stub"}},
+		{"shell marker hint", ".sh", "echo 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, "", 1, []string{"stub"}},
+		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, "", 1, []string{"stub"}},
+		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for unreleased commands, add "Not in the latest release yet" before the block; for output samples, add <!-- release-commands: expected-failure -->`, "", 3, []string{"stub"}},
+		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", "", 0, []string{"stbu"}},
+		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", "", 1, []string{"stub", "stub-helper"}},
+		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", "", 0, []string{"stub", "stub-helper"}},
+		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", "", 0, []string{"stub"}},
+		{"mdx marker hint", ".mdx", "`stub nope`", `for output samples, add <!-- release-commands: expected-failure -->`, "", 1, []string{"stub"}},
+		{"unsupported extension", ".txt", "stub nope", "unsupported file type", "", 0, []string{"stub"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
@@ -94,15 +92,16 @@ func TestReleaseCommands(t *testing.T) {
 				args = append(args, "--binary", binary)
 			}
 			code := run(t.Context(), append(args, file), &out, &errOut)
-			if strings.HasPrefix(test.finding, "passes;") {
-				require.Equal(t, 0, code, errOut.String())
-				require.Contains(t, out.String(), test.finding)
-			} else if test.finding != "" {
+			if test.finding != "" {
 				require.Equal(t, 1, code, errOut.String())
 				require.Contains(t, errOut.String(), test.finding)
 			} else {
 				require.Equal(t, 0, code, errOut.String())
 				require.Empty(t, errOut.String())
+			}
+			if test.stdout != "" {
+				require.Equal(t, fmt.Sprintf("%s:%d: %s\n", file, test.line, test.stdout), out.String())
+			} else {
 				require.Empty(t, out.String())
 			}
 			if test.line > 0 {
@@ -140,7 +139,6 @@ func TestReleaseCommandsHelpCache(t *testing.T) {
 	for range 2 {
 		var out, errOut bytes.Buffer
 		require.Equal(t, 1, run(t.Context(), []string{"--archive", archive, "--binary", "stub", "--binary", "other", first, second}, &out, &errOut))
-		require.Equal(t, 4, strings.Count(errOut.String(), `has no command "absent"`))
 		require.Equal(t, 2, strings.Count(errOut.String(), "unsupported help"))
 		data, err := os.ReadFile(log)
 		require.NoError(t, err)

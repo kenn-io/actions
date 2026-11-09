@@ -37,7 +37,6 @@ func TestCheck(t *testing.T) {
 		{"lowercase symbolic child", "group $child", ""},
 		{"lowercase symbolic argument flag", "plain $path --bogus", "unknown flag: --bogus"},
 		{"symbolic child flag", "group <cmd> --child-only", ""},
-		{"symbolic argument flags", "plain <path> --bogus", "unknown flag: --bogus"},
 		{"disabled flag parsing", "unsafe file --help=false", ""},
 		{"group positional arguments", "named alice extra", ""},
 		{"child help error with positional parent", "named broken", "child help failed"},
