@@ -169,6 +169,19 @@ jobs:
           files: release-commands/testdata/fixture.md
           binaries: stub
           asset: stub.tar.gz
+      - name: Add an unsupported fixture command
+        run: printf '`stub nope`\n' > testdata/fixture.md
+      - uses: $/release-commands
+        id: unsupported_command
+        continue-on-error: true
+        with:
+          files: release-commands/testdata/fixture.md
+          binaries: stub
+          asset: stub.tar.gz
+      - name: Check the action rejects the unsupported command
+        env:
+          OUTCOME: ${{ steps.unsupported_command.outcome }}
+        run: test "$OUTCOME" = failure
       - name: Clean up fixture
         if: always()
         run: rm -f testdata/fixture.md

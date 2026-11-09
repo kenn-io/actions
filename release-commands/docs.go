@@ -279,7 +279,11 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 				pending = "expected-failure marker"
 				continue
 			}
-			if child.Kind() == ast.KindParagraph && strings.HasPrefix(visible(child, source), note) {
+			markerNode := child
+			if child.Kind() == ast.KindBlockquote && child.FirstChild() == child.LastChild() && child.FirstChild() != nil {
+				markerNode = child.FirstChild()
+			}
+			if markerNode.Kind() == ast.KindParagraph && strings.HasPrefix(visible(markerNode, source), note) {
 				pending = "unreleased note"
 				continue
 			}
