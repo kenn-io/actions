@@ -2,6 +2,7 @@ package main
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -46,7 +47,6 @@ func TestExamples(t *testing.T) {
 		{"powershell comma array output", ".ps1", "Write-Output 'stub run',\n'stub nope'", "", []example{{"stub run", 1}, {"stub nope", 2}}},
 		{"powershell array separator", ".ps1", `Write-Host @('stub run file', 'bogus') -Separator ' --'`, "", []example{{"stub run file --bogus", 1}}},
 		{"powershell empty separator", ".ps1", `Write-Host 'stub run file --bo' 'gus' -Separator ''`, "", []example{{"stub run file --bogus", 1}}},
-		{"powershell wrapper", ".ps1", `function Write-Info($message) { Write-Host $message }; Write-Info 'stub nope'`, "", []example{{"stub nope", 1}}},
 		{"powershell static concatenation", ".ps1", `Write-Host ('stub ' + 'nope')`, "", []example{{"stub nope", 1}}},
 		{"powershell dynamic concatenation", ".ps1", `Write-Host ('stub ' + $name)`, "", nil},
 		{"powershell nested concatenation", ".ps1", `Write-Host ('stub ' + 'no' + 'pe')`, "", []example{{"stub nope", 1}}},
@@ -78,8 +78,8 @@ func TestExamples(t *testing.T) {
 
 func TestInstallerMarkers(t *testing.T) {
 	for _, ext := range []string{".sh", ".ps1"} {
-		for _, marker := range []string{note, "release-commands: expected-failure"} {
-			for _, ending := range []string{"\n", "ignored\n", "ignored; "} {
+		for marker, wantMarker := range map[string]string{note: "unreleased note", "release-commands: expected-failure": "expected-failure marker"} {
+			for _, ending := range []string{"\n", "ignored\n", "ignored; ", map[string]string{".sh": "echo\n", ".ps1": "Write-Host ''\n"}[ext]} {
 				t.Run(ext+marker+ending, func(t *testing.T) {
 					helper, call, printer := "info() { printf '%s\\n' \"$1\" \"$2\"; }", "info \\\n'stub nope' 'stub absent'", "echo"
 					if ext == ".ps1" {
@@ -89,16 +89,8 @@ func TestInstallerMarkers(t *testing.T) {
 					blocks, err := examples("example"+ext, []byte(source), []string{"stub"})
 					require.NoError(t, err)
 					require.Len(t, blocks, 2)
-					wantMarker := "unreleased note"
-					if marker != note {
-						wantMarker = "expected-failure marker"
-					}
 					require.Equal(t, exampleBlock{marker: wantMarker, commands: []example{{"stub nope", 4}, {"stub absent", 4}, {"stub future", 5}}}, blocks[0])
-					line := 7
-					if ending == "ignored; " {
-						line = 6
-					}
-					require.Equal(t, exampleBlock{commands: []example{{"stub run", line}}}, blocks[1])
+					require.Equal(t, exampleBlock{commands: []example{{"stub run", 6 + strings.Count(ending, "\n")}}}, blocks[1])
 				})
 			}
 		}

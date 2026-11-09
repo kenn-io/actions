@@ -29,7 +29,6 @@ function StaticValues($expression, $environment) {
         return
     }
     $line = $expression.Extent.StartLineNumber
-    if ($expression.Extent.Text.StartsWith('@')) { $line++ }
     if ($expression -is [System.Management.Automation.Language.StringConstantExpressionAst]) { return [pscustomobject]@{ text = $expression.Value; line = $line } }
     if ($expression -is [System.Management.Automation.Language.BinaryExpressionAst] -and $expression.Operator -eq 'Plus') {
         $left = @(StaticValues $expression.Left $environment)

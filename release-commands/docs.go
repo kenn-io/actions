@@ -230,19 +230,13 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		if err != nil && filepath.Ext(file) != ".md" {
 			return
 		}
-		for _, binary := range binaries {
-			words := strings.Fields(value)
-			for len(words) > 0 {
-				name, _, assigned := strings.Cut(words[0], "=")
-				if !assigned || !syntax.ValidName(name) {
-					break
-				}
-				words = words[1:]
-			}
-			if len(words) > 0 && words[0] == binary || slices.ContainsFunc(invocations, func(args []string) bool { return args[0] == binary }) {
-				current.commands = append(current.commands, example{text: value, line: line})
-				break
-			}
+		words := strings.Fields(value)
+		first := slices.IndexFunc(words, func(word string) bool {
+			name, _, assigned := strings.Cut(word, "=")
+			return !assigned || !syntax.ValidName(name)
+		})
+		if first >= 0 && slices.Contains(binaries, words[first]) || slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
+			current.commands = append(current.commands, example{text: value, line: line})
 		}
 	}
 	if filepath.Ext(file) != ".md" {
@@ -256,25 +250,32 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		if failure != nil {
 			return nil, fmt.Errorf("%s: cannot read installer messages: %w", file, failure)
 		}
-		position, marker := 0, ""
-		join := false
+		flush := func(marker string) {
+			if len(current.commands) > 0 {
+				result = append(result, current)
+			}
+			current = exampleBlock{marker: marker}
+		}
+		position := 0
 		for _, message := range messages {
+			if message.Text == "" {
+				continue
+			}
 			if message.Statement >= position {
 				gap := strings.Split(string(source[position:message.Statement]), "\n")
 				for index, line := range gap {
 					line = strings.Trim(line, " \t\r;&|")
 					switch {
 					case strings.HasPrefix(line, "#") && strings.Contains(line, note):
-						marker, join = "unreleased note", false
+						flush("unreleased note")
 					case strings.HasPrefix(line, "#") && strings.Contains(line, "release-commands: expected-failure"):
-						marker, join = "expected-failure marker", false
+						flush("expected-failure marker")
 					case line == "" && index > 0 && index < len(gap)-1, line != "" && !strings.HasPrefix(line, "#"):
-						marker, join = "", false
+						flush("")
 					}
 				}
 			}
 			position = max(position, message.End)
-			current = exampleBlock{marker: marker}
 			for offset, value := range strings.Split(termtext.StripANSI(message.Text), "\n") {
 				for {
 					add(value, message.Line+offset)
@@ -285,15 +286,8 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 					value = rest
 				}
 			}
-			if len(current.commands) > 0 {
-				if len(result) > 0 && marker != "" && join && result[len(result)-1].marker == marker {
-					result[len(result)-1].commands = append(result[len(result)-1].commands, current.commands...)
-				} else {
-					result = append(result, current)
-				}
-				join = true
-			}
 		}
+		flush("")
 		return result, nil
 	}
 	root := parser.New(parser.WithExtensions(extension.NewTableParser())).Parse(source)
