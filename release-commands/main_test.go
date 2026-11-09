@@ -75,6 +75,7 @@ func TestReleaseCommands(t *testing.T) {
 		{"powershell passing marker", ".ps1", "# Not in the latest release yet\nWrite-Host '  stub run file'", "passes; remove unreleased note", 2, []string{"stub"}},
 		{"powershell syntax error", ".ps1", "Write-Host 'stub run", "cannot read installer messages: PowerShell parser", 0, []string{"stub"}},
 		{"markdown parse escape", ".md", "`stub started (pid 12)`", "add <!-- release-commands: expected-failure -->", 1, []string{"stub"}},
+		{"marked missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`stub-helper started (pid 12)`", "", 0, []string{"stub", "stub-helper"}},
 		{"installer passing marker", ".sh", "# release-commands: expected-failure\necho 'stub run file'", "passes; remove expected-failure marker", 2, []string{"stub"}},
 		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"`, 3, []string{"stub"}},
 		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0, []string{"stbu"}},

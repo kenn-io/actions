@@ -71,7 +71,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 				if err != nil {
 					problem = err.Error() + "; for output samples, add <!-- release-commands: expected-failure --> before the block"
 				}
-				for _, args := range invocations {
+				for _, args := range append(invocations, strings.Fields(example.text)) {
 					referenced[args[0]] = true
 				}
 				for _, args := range invocations {
