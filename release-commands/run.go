@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -150,6 +151,7 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 	if err != nil {
 		return err
 	}
+	var helpFlags *pflag.FlagSet
 	// Match Cobra's Find behavior before validating flags against the final page.
 	for i := 0; i < len(args); i++ {
 		word := args[i]
@@ -175,12 +177,14 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 			}
 			break
 		}
-		if word == "help" && len(current.path) == 1 {
-			continue
-		}
 		child, err := cache.help(ctx, binary, append(slices.Clone(current.path[1:]), word))
 		if err != nil {
 			return err
+		}
+		// Cobra's help command parses the whole invocation with its own flags.
+		if word == "help" && len(current.path) == 1 {
+			helpFlags = child.flags
+			continue
 		}
 		if n := len(current.path); child.output != current.output && len(child.path) == n+1 && slices.Equal(child.path[:n], current.path) && (child.path[n] == word || slices.Contains(child.aliases, word)) {
 			current = child
@@ -192,8 +196,5 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 		break
 	}
 	// String values avoid type checks; a sentinel permits a flag without a sample.
-	if err := current.flags.Parse(append(slices.Clone(args), "")); err != nil {
-		return err
-	}
-	return nil
+	return cmp.Or(helpFlags, current.flags).Parse(append(slices.Clone(args), ""))
 }

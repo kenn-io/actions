@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"cmp"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -33,22 +34,22 @@ var (
 )
 
 // installerStrings reads static, single-line output and one-step message helpers.
-func installerStrings(source []byte, powershell bool) []example {
+func installerStrings(source []byte, powershell bool) ([]example, error) {
 	if !powershell {
 		return shellStrings(source)
 	}
 	functions := map[string]bool{}
-	for _, match := range powershellFunctions.FindAllSubmatch(source, -1) {
+	for _, match := range powershellFunctions.FindAllSubmatch(code(source), -1) {
 		functions[strings.ToLower(string(match[1]))] = false
 	}
-	for _, match := range powershellHelpers.FindAllSubmatch(source, -1) {
+	for _, match := range powershellHelpers.FindAllSubmatch(code(source), -1) {
 		_, helper := functions[strings.ToLower(string(match[3]))]
 		if !helper && bytes.EqualFold(match[2], match[4]) {
 			functions[strings.ToLower(string(match[1]))] = true
 		}
 	}
 	var messages []example
-	for _, match := range powershellCalls.FindAllSubmatchIndex(source, -1) {
+	for _, match := range powershellCalls.FindAllSubmatchIndex(code(source), -1) {
 		name := strings.ToLower(string(source[match[2]:match[3]]))
 		forwarded, declared := functions[name]
 		if !forwarded && (declared || !strings.HasPrefix(name, "write-")) {
@@ -65,14 +66,44 @@ func installerStrings(source []byte, powershell bool) []example {
 			messages = append(messages, example{value, bytes.Count(source[:match[3]], []byte{'\n'}) + 1})
 		}
 	}
-	return messages
+	return messages, nil
+}
+
+// code blanks PowerShell comments and quoted text so only real calls remain matchable.
+func code(source []byte) []byte {
+	masked := bytes.Clone(source)
+	var quote byte
+	for i := 0; i < len(masked); i++ {
+		switch c := masked[i]; {
+		case quote == '<' && c == '#' && i+1 < len(masked) && masked[i+1] == '>':
+			masked[i], masked[i+1], quote = ' ', ' ', 0
+			i++
+		case quote == '#' && c == '\n':
+			quote = 0
+		case quote == '"' && c == '`' && i+1 < len(masked):
+			masked[i], masked[i+1] = ' ', ' '
+			i++
+		case quote != 0 && c == quote && quote != '<' && quote != '#':
+			quote = 0
+		case quote == 0 && c == '<' && i+1 < len(masked) && masked[i+1] == '#':
+			masked[i], masked[i+1], quote = ' ', ' ', '<'
+			i++
+		case quote == 0 && c == '#' && (i == 0 || strings.IndexByte(" \t\r\n;{}|(", masked[i-1]) >= 0):
+			masked[i], quote = ' ', '#'
+		case quote == 0 && (c == '\'' || c == '"'):
+			quote = c
+		case quote != 0 && c != '\n':
+			masked[i] = ' '
+		}
+	}
+	return masked
 }
 
 // shellStrings reads output arguments from parsed calls, excluding redirects and heredocs.
-func shellStrings(source []byte) []example {
+func shellStrings(source []byte) ([]example, error) {
 	tree, err := syntax.NewParser().Parse(bytes.NewReader(source), "")
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	// Helpers forward their first argument directly to a printer.
 	printers := map[string]bool{"echo": true, "printf": true}
@@ -143,7 +174,7 @@ func shellStrings(source []byte) []example {
 		}
 		return false
 	})
-	return messages
+	return messages, nil
 }
 
 // visible returns the text a reader sees in node, so emphasis around the note still counts.
@@ -166,17 +197,17 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "$ "))
 		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
-		if err != nil {
-			return false
-		}
-		if slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
+		if err == nil && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
 			current.commands = append(current.commands, example{text: value, line: line})
 			return true
 		}
 		return false
 	}
 	if !markdown {
-		messages := installerStrings(source, filepath.Ext(file) == ".ps1")
+		messages, err := installerStrings(source, filepath.Ext(file) == ".ps1")
+		if err != nil {
+			return nil, fmt.Errorf("%s:%w", file, err)
+		}
 		sourceLines := strings.Split(string(source), "\n")
 		markerFor := func(line int) (string, int) {
 			for line > 1 && line-1 <= len(sourceLines) {
