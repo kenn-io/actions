@@ -169,6 +169,9 @@ jobs:
           files: release-commands/testdata/fixture.md
           binaries: stub
           asset: stub.tar.gz
+      - name: Clean up fixture
+        if: always()
+        run: rm -f testdata/fixture.md
 
   first-paint:
     name: first-paint

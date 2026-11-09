@@ -11,6 +11,7 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []exampleBlock
 	}{
+		{"powershell quoted output call", ".ps1", `Write-Host "Details; Write-Host 'stub nope'"`, nil},
 		{"powershell ignored parameter", ".ps1", "function Write-Info([string]$Message) { Write-Host 'Ready' }\nWrite-Info 'stub nope'", nil},
 		{"printf assignment helper", ".sh", `remember() { printf -v message '%s' "$1"; }; remember 'stub nope'`, nil},
 		{"shell adjacent operator", ".sh", `true&&echo 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
@@ -61,4 +62,9 @@ func TestExamples(t *testing.T) {
 			require.Equal(t, test.want, blocks)
 		})
 	}
+}
+
+func TestExamplesInvalidInstaller(t *testing.T) {
+	_, err := examples("example.sh", []byte("echo 'stub nope'\nfoo() { case"), []string{"stub"})
+	require.ErrorContains(t, err, "case")
 }
