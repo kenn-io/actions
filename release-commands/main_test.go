@@ -69,6 +69,7 @@ func TestReleaseCommands(t *testing.T) {
 		line                                int
 		binaries                            []string
 	}{
+		{"installer without commands", ".sh", "echo hello", "example.sh:", "", 0, []string{"stub"}},
 		{"installer parse error names file", ".sh", "echo 'stub nope'\nfoo() { case", "example.sh:2:", "", 2, []string{"stub"}},
 		{"passing marked command", ".md", "<!-- release-commands: expected-failure -->\n\n```sh\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 4, []string{"stub"}},
 		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, "", 1, []string{"stub"}},
