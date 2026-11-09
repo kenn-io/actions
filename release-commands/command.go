@@ -13,7 +13,12 @@ import (
 var shellExpansion = &expand.Config{
 	CmdSubst:  func(w io.Writer, _ *syntax.CmdSubst) error { _, err := io.WriteString(w, "0"); return err },
 	ProcSubst: func(*syntax.ProcSubst) (string, error) { return "0", nil },
-	Env:       expand.FuncEnviron(func(name string) string { return "$" + name }),
+	Env: expand.FuncEnviron(func(name string) string {
+		if name == "IFS" {
+			return ""
+		}
+		return "$" + name
+	}),
 }
 
 // Synopsis expansion preserves shell quoting for the shell parser that follows it.
@@ -65,13 +70,13 @@ func commands(line string) ([][]string, error) {
 			}
 			var args []string
 			for _, word := range call.Args {
-				var value string
-				value, err = expand.Literal(shellExpansion, word)
+				var values []string
+				values, err = expand.Fields(shellExpansion, word)
 				if err != nil {
 					return false
 				}
 				if word.Lit() != "..." && word.Lit() != "…" {
-					args = append(args, value)
+					args = append(args, values...)
 				}
 			}
 			if len(args) > 0 {
