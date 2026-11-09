@@ -159,6 +159,9 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 	var current exampleBlock
 	add := func(value string, line int) bool {
 		value = strings.TrimSpace(value)
+		if markdown {
+			value = strings.TrimPrefix(value, "$ ")
+		}
 		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
 		if err == nil && len(invocations) > 0 && (markdown || slices.Contains(binaries, invocations[0][0])) && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
