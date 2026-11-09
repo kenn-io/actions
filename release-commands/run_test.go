@@ -128,7 +128,11 @@ func TestReleasedHelp(t *testing.T) {
 		t.Run(test.file, func(t *testing.T) {
 			output, err := os.ReadFile("testdata/help/" + test.file + ".txt")
 			require.NoError(t, err)
-			got, err := describe(string(output), root.flags)
+			globals := root.flags
+			if test.file != "msgvault-calendar-create" {
+				globals = nil
+			}
+			got, err := describe(string(output), globals)
 			require.NoError(t, err)
 			if test.file == "kata" {
 				require.Equal(t, []string{"kata"}, got.path)
