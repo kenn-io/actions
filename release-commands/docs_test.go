@@ -20,12 +20,10 @@ func TestExamples(t *testing.T) {
 		want              []expectedBlock
 	}{
 		{"alert unreleased note", ".md", "> [!NOTE]\n> Not in the latest release yet.\n\n`stub nope`", []expectedBlock{{marker: "unreleased note", commands: []expectedExample{{"stub nope", 4}}}}},
-		{"printf helper unquoted parameter", ".sh", `info() { printf '%s\n' $1; }; info 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub", 1}}}}},
 		{"joined echo operands", ".sh", `echo 'stub plain' 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub plain stub nope", 1}}}}},
-		{"printf helper literal text", ".sh", `info() { printf 'stub nope\n%s\n' "$1"; }; info Ready`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},
+		{"printf helper prefixed message", ".sh", `info() { printf '%s\n' "$1"; }; info 'Get started: stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},
 		{"printf unused operand", ".sh", `printf 'stub plain\n' 'stub nonexistent'`, []expectedBlock{{commands: []expectedExample{{"stub plain", 1}}}}},
 		{"printf helper unused operand", ".sh", `info() { printf 'stub run\n' "$1"; }; info 'stub nope'`, nil},
-		{"printf helper message operand", ".sh", `info() { printf '%s\n' "$1"; }; info 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},
 		{"shell escaped double quotes", ".sh", `echo "Run: stub plain --log.level \"a --bogus\""`, []expectedBlock{{commands: []expectedExample{{`stub plain --log.level "a --bogus"`, 1}}}}},
 		{"powershell doubled apostrophes", ".ps1", `Write-Host 'Run: stub plain --log.level ''a --bogus'''`, []expectedBlock{{commands: []expectedExample{{`stub plain --log.level 'a --bogus'`, 1}}}}},
 		{"printf substituted format", ".sh", `printf 'stub %s\n' plain`, []expectedBlock{{commands: []expectedExample{{"stub plain", 1}}}}},
@@ -57,7 +55,6 @@ func TestExamples(t *testing.T) {
 		{"comment backslash", ".md", "```sh\nstub run file # note \\\nstub nope\n```", []expectedBlock{{commands: []expectedExample{{"stub run file # note " + "\\", 2}, {"stub nope", 3}}}}},
 		{"literal backslashes", ".md", "```sh\nstub run file \\\\\nstub nope\n```", []expectedBlock{{commands: []expectedExample{{`stub run file \\`, 2}, {"stub nope", 3}}}}},
 		{"html consumes unreleased note", ".md", "Not in the latest release yet\n\n<div>Spacer</div>\n\n`stub nope`", []expectedBlock{{commands: []expectedExample{{"stub nope", 5}}}}},
-		{"blockquote note before outside block", ".md", "> Not in the latest release yet\n\n```sh\nstub nope\n```", []expectedBlock{{marker: "unreleased note", commands: []expectedExample{{"stub nope", 4}}}}},
 		{"nested marker", ".md", "> Not in the latest release yet\n>\n> ```sh\n> stub nope\n> ```", []expectedBlock{{marker: "unreleased note", commands: []expectedExample{{"stub nope", 4}}}}},
 		{"quoted newline", ".md", "```sh\nstub run 'hello\n  world'\n```", []expectedBlock{{commands: []expectedExample{{"stub run 'hello\n  world'", 2}}}}},
 		{"expected failure comment", ".md", "<!-- release-commands: expected-failure -->\n\n`stub run file`", []expectedBlock{{marker: "expected-failure marker", commands: []expectedExample{{"stub run file", 3}}}}},

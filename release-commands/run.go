@@ -141,9 +141,6 @@ func describe(output string, root *pflag.FlagSet) (usage, error) {
 				continue
 			}
 			name := strings.TrimPrefix(match[2], "--")
-			if u.flags.Lookup(name) != nil {
-				continue
-			}
 			if compactNames {
 				if root == nil || root.Lookup(name) == nil {
 					return u, fmt.Errorf("unsupported help: no root definition for --%s", name)

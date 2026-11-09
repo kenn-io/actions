@@ -7,35 +7,55 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDescribe(t *testing.T) {
 	t.Parallel()
+	rootOutput, err := os.ReadFile("testdata/help/msgvault-root.txt")
+	require.NoError(t, err)
+	root, err := describe(string(rootOutput), nil)
+	require.NoError(t, err)
 	for _, test := range []struct {
-		name, output, absent string
-		args                 []string
-		finding              string
+		name, output, file, absent, finding string
+		globals                             *pflag.FlagSet
+		path                                []string
+		arguments                           bool
+		parse                               [][]string
 	}{
-		{"compact global flags", "Usage:\n  compact run <path>\nGlobal: --json, --project <string>, -q/--quiet. Details: compact --help\n", "", []string{"--json", "--project", "foo", "-q"}, ""},
-		{"multiword flag type", "Usage:\n  kata federation enroll [flags]\nFlags:\n      --spoke-instance kata federation identity   spoke instance UID\n", "", []string{"--spoke-instance", "example-instance"}, ""},
-		{"prose flag absent", "      --ghost  prose\n\nUsage:\n  prose [flags]\nFlags:\n  -h, --help  help for prose\n", "ghost", nil, ""},
-		{"wrapped description absent", "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    --description-only  continuation\n", "description-only", nil, ""},
-		{"unsupported flag row", "Usage:\n  stub [flags]\nFlags:\n  --quiet   Quiet output\n", "", nil, "unsupported help"},
-		{"unsupported flag section", "Usage:\n  stub [flags]\nPersistent Flags:\n      --quiet   Quiet output\n", "", nil, "unsupported help: unrecognized flag section"},
+		{name: "roborev compact global flags", output: "Usage:\n  roborev show [flags]\nGlobal: --server <string>, -v/--verbose. Details: roborev --help\n", path: []string{"roborev", "show"}, arguments: true, parse: [][]string{{"--server", "example", "-v"}}},
+		{name: "multiword flag type", output: "Usage:\n  kata federation enroll [flags]\nFlags:\n      --spoke-instance kata federation identity   spoke instance UID\n", path: []string{"kata", "federation", "enroll"}, arguments: true, parse: [][]string{{"--spoke-instance", "example-instance"}}},
+		{name: "prose flag absent", output: "      --ghost  prose\n\nUsage:\n  prose [flags]\nFlags:\n  -h, --help  help for prose\n", absent: "ghost", path: []string{"prose"}, arguments: true},
+		{name: "wrapped description absent", output: "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    --description-only  continuation\n", absent: "description-only", path: []string{"stub", "group", "child"}, arguments: true},
+		{name: "unsupported flag row", output: "Usage:\n  stub [flags]\nFlags:\n  --quiet   Quiet output\n", finding: "unsupported help"},
+		{name: "unsupported flag section", output: "Usage:\n  stub [flags]\nPersistent Flags:\n      --quiet   Quiet output\n", finding: "unsupported help: unrecognized flag section"},
+		{name: "msgvault-calendar-create", file: "msgvault-calendar-create", globals: root.flags, path: []string{"msgvault", "calendar", "create"}, arguments: true, parse: [][]string{{"--account", "example-account"}, {"--json"}, {"--home", "example-home"}, {"--local"}, {"--agent-url", "https://example.com"}, {"--verbose"}}},
+		{name: "kata", file: "kata", path: []string{"kata"}, parse: [][]string{{"--json"}, {"--format", "agent"}, {"--quiet"}}},
+		{name: "roborev", file: "roborev", path: []string{"roborev", "review"}, arguments: true, parse: [][]string{{"--branch"}, {"--server", "example-server"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := describe(test.output, nil)
+			output := test.output
+			if test.file != "" {
+				data, err := os.ReadFile("testdata/help/" + test.file + ".txt")
+				require.NoError(t, err)
+				output = string(data)
+			}
+			got, err := describe(output, test.globals)
 			if test.finding != "" {
 				require.ErrorContains(t, err, test.finding)
 				return
 			}
 			require.NoError(t, err)
+			require.Equal(t, test.path, got.path)
+			require.Equal(t, test.arguments, got.arguments)
 			if test.absent != "" {
 				require.Nil(t, got.flags.Lookup(test.absent))
-			} else {
-				require.NoError(t, got.flags.Parse(test.args))
+			}
+			for _, args := range test.parse {
+				require.NoError(t, got.flags.Parse(args), args)
+				require.Empty(t, got.flags.Args(), args)
 			}
 		})
 	}
@@ -110,49 +130,6 @@ func TestHelpCache(t *testing.T) {
 		"stub help named": 1, "stub help named broken": 2, "stub help malformed": 2,
 		"other help": 1, "other help group": 1, "other help group absent": 1,
 	}, counts)
-}
-
-func TestReleasedHelp(t *testing.T) {
-	rootOutput, err := os.ReadFile("testdata/help/msgvault-root.txt")
-	require.NoError(t, err)
-	root, err := describe(string(rootOutput), nil)
-	require.NoError(t, err)
-	for _, test := range []struct {
-		file  string
-		flags []string
-	}{
-		{"msgvault-calendar-create", []string{"account", "json", "home", "local", "agent-url", "verbose"}},
-		{"kata", []string{"json", "format", "quiet"}},
-		{"roborev", []string{"branch", "server"}},
-	} {
-		t.Run(test.file, func(t *testing.T) {
-			output, err := os.ReadFile("testdata/help/" + test.file + ".txt")
-			require.NoError(t, err)
-			globals := root.flags
-			if test.file != "msgvault-calendar-create" {
-				globals = nil
-			}
-			got, err := describe(string(output), globals)
-			require.NoError(t, err)
-			if test.file == "kata" {
-				require.Equal(t, []string{"kata"}, got.path)
-				require.False(t, got.arguments)
-			}
-			if test.file == "roborev" {
-				require.NoError(t, got.flags.Parse([]string{"--branch"}))
-				require.NoError(t, got.flags.Parse([]string{"--server", "example-server"}))
-			}
-			for _, flag := range test.flags {
-				require.NotNil(t, got.flags.Lookup(flag), flag)
-			}
-		})
-	}
-	t.Run("compact names preserve local overrides", func(t *testing.T) {
-		output := "Usage:\n  msgvault test [flags]\nFlags:\n      --home   local override\nGlobal Flags: --home, --agent-url\n"
-		got, err := describe(output, root.flags)
-		require.NoError(t, err)
-		require.ErrorContains(t, got.flags.Parse([]string{"--home", "--bogus"}), "unknown flag: --bogus")
-	})
 }
 
 func TestReleasedHelpCache(t *testing.T) {

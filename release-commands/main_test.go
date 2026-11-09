@@ -88,6 +88,9 @@ func TestReleaseCommands(t *testing.T) {
 			if test.finding != "" {
 				require.Equal(t, 1, code, errOut.String())
 				require.Contains(t, errOut.String(), test.finding)
+				if test.line > 0 {
+					require.Contains(t, errOut.String(), fmt.Sprintf("%s:%d:", file, test.line))
+				}
 			} else {
 				require.Equal(t, 0, code, errOut.String())
 				require.Empty(t, errOut.String())
@@ -96,9 +99,6 @@ func TestReleaseCommands(t *testing.T) {
 				require.Equal(t, fmt.Sprintf("%s:%d: %s\n", file, test.line, test.stdout), out.String())
 			} else {
 				require.Empty(t, out.String())
-			}
-			if test.line > 0 {
-				require.Contains(t, out.String()+errOut.String(), fmt.Sprintf("%s:%d:", file, test.line))
 			}
 		})
 	}
@@ -125,7 +125,18 @@ func TestReleaseCommandsAction(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "-x.md"), []byte("`stub nope`"), 0o600))
 	// Supply the local archive through the same release commands CI uses.
-	gh := "#!/bin/bash\nset -eu\ncase \"$1 $2\" in\n'release view') echo v1.0.0 ;;\n'release download') cp \"$FIXTURE_ARCHIVE\" \"${@: -1}/stub.tar.gz\" ;;\n*) exit 2 ;;\nesac\n"
+	gh := `#!/bin/bash
+set -eu
+case "$1 $2" in
+'release view')
+  [[ "$*" == 'release view --repo example/project --json tagName --jq .tagName' ]]
+  echo v1.0.0 ;;
+'release download')
+  [[ $# == 9 && "$*" == "release download v1.0.0 --repo example/project --pattern stub.tar.gz --dir ${9}" ]]
+  cp "$FIXTURE_ARCHIVE" "${9}/stub.tar.gz" ;;
+*) exit 2 ;;
+esac
+`
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte(gh), 0o700))
 	uname := "#!/bin/sh\ncase \"$1\" in\n-s) echo Linux ;;\n-m) echo x86_64 ;;\n*) exit 2 ;;\nesac\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "uname"), []byte(uname), 0o700))
