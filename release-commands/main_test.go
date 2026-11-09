@@ -69,6 +69,12 @@ func TestReleaseCommands(t *testing.T) {
 		line                                int
 		binaries                            []string
 	}{
+		{"printf string precision", ".sh", "echo 'stub plain'\nprintf 'stub %.4s\\n' 'nope-suffix'", `has no command "nope"`, "", 2, []string{"stub"}},
+		{"printf render error", ".sh", "echo 'stub plain'\nprintf 'stub %f\\n' 1", "invalid format char: f", "", 2, []string{"stub"}},
+		{"printf render error after substitution", ".sh", "echo 'stub plain'\nprintf '%s %f\\n' stub 1", "invalid format char: f", "", 2, []string{"stub"}},
+		{"printf helper render error", ".sh", "info() { printf '%s %f\\n' \"$1\" 1; }\necho 'stub plain'\ninfo stub", "invalid format char: f", "", 3, []string{"stub"}},
+		{"printf incomplete conversion", ".sh", "echo 'stub plain'\nprintf 'stub plain %'", "missing format char", "", 2, []string{"stub"}},
+		{"printf render error in quoted argument", ".sh", "echo 'stub plain'\nprintf 'stub plain \"%f\"\\n' 1", "invalid format char: f", "", 2, []string{"stub"}},
 		{"markdown prose", ".md", "Getting started.", "", "", 0, []string{"stub"}},
 		{"installer without commands", ".sh", "echo hello", "no commands for stub", "", 0, []string{"stub"}},
 		{"passing marked command", ".md", "<!-- release-commands: expected-failure -->\n\n```sh\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 4, []string{"stub"}},
