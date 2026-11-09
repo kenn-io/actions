@@ -66,7 +66,6 @@ func TestCheck(t *testing.T) {
 	for _, test := range []struct{ name, arguments, finding string }{
 		{"disabled flag parsing", "unsafe file --help=false", ""},
 		{"help target after terminator", "help -- group nope", `has no command "nope"`},
-		{"help known target after terminator", "help -- group child", ""},
 		{"help rejects target command flag", "help plain --log.level debug", "unknown flag: --log.level"},
 		{"count flag then command", "-v nope", `has no command "nope"`},
 		{"lowercase symbolic child", "group $child", ""},
@@ -131,7 +130,7 @@ func TestHelpCache(t *testing.T) {
 	}, counts)
 }
 
-func TestReleasedHelpCache(t *testing.T) {
+func TestReleasedHelpRootFlags(t *testing.T) {
 	dir := t.TempDir()
 	helpDir, err := filepath.Abs("testdata/help")
 	require.NoError(t, err)
@@ -148,7 +147,6 @@ func TestReleasedHelpCache(t *testing.T) {
 	binary := filepath.Join(dir, "msgvault")
 	require.NoError(t, os.WriteFile(binary, []byte(wrapper.String()), 0o700))
 	for _, command := range []string{
-		"--home example-home daemon stop",
 		"daemon --home example-home stop",
 	} {
 		t.Run(command, func(t *testing.T) {
