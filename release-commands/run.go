@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w.-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
+var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w.-]+)(?:[ =](\S+(?: \S+)*))?(?: {2,}.*)?$`)
 
 type usage struct {
 	output    string

@@ -32,7 +32,7 @@ var (
 	installerTokens    = regexp.MustCompile(`(?s)'(?:''|[^'])*'|"(?:\\.|` + "`" + `.|""|[^"\\` + "`" + `])*"|<\#.*?\#>|\#[^\n]*|[;{}\n]|[^\s;{}'"\#]+`)
 	shellFunction      = regexp.MustCompile(`\b([\w-]+)\s*\(\s*\)\s*\{`)
 	powershellFunction = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
-	colorPrefix        = regexp.MustCompile(`^\s*\$(?:\{[\w]+\}|[\w]+)`)
+	colorPrefix        = regexp.MustCompile(`^(?:\s*\$(?:\{\w+\}|\w+))+`)
 )
 
 // installerStrings reads single-line quoted output arguments throughout the source.
@@ -41,88 +41,86 @@ func installerStrings(source []byte, powershell bool) []example {
 	code := append([]byte(nil), source...)
 	for _, match := range matches {
 		if strings.ContainsRune("'\"#<", rune(source[match[0]])) {
-			for i := match[0]; i < match[1]; i++ {
-				if code[i] != '\n' {
-					code[i] = ' '
-				}
-			}
+			copy(code[match[0]:match[1]], bytes.Repeat([]byte{' '}, match[1]-match[0]))
 		}
 	}
-	printers := map[string]bool{"echo": true, "printf": true}
+	// Each function body opens at its first brace; a body that calls a printer makes a wrapper.
+	printers, bodies := map[string]bool{"echo": true, "printf": true}, map[int]string{}
 	for _, pattern := range []*regexp.Regexp{shellFunction, powershellFunction} {
-		for _, match := range pattern.FindAllSubmatch(code, -1) {
-			name := string(match[1])
+		for _, match := range pattern.FindAllSubmatchIndex(code, -1) {
+			name := string(code[match[2]:match[3]])
 			if powershell {
 				name = strings.ToLower(name)
 			}
-			printers[name] = true
+			bodies[match[0]+bytes.IndexByte(code[match[0]:], '{')] = name
 		}
 	}
 	var messages []example
-	call, boundary, escapes, argument := "", true, false, 0
-	for _, match := range matches {
-		text := string(source[match[0]:match[1]])
-		line := bytes.Count(source[:match[0]], []byte{'\n'}) + 1
-		if strings.HasPrefix(text, "#") || strings.HasPrefix(text, "<#") {
-			continue
-		}
-		if strings.ContainsAny(text, ";{}\n") && len(text) == 1 {
-			call, boundary, escapes, argument = "", true, false, 0
-			continue
-		}
-		if boundary {
-			name := text
-			if powershell {
-				name = strings.ToLower(name)
+	// Rescan until no new wrapper appears, so declaration order doesn't matter.
+	for known := 0; known != len(printers); {
+		known, messages = len(printers), nil
+		call, boundary, escapes, argument, owners := "", true, false, 0, []string{}
+		for _, match := range matches {
+			text := string(source[match[0]:match[1]])
+			if strings.HasPrefix(text, "#") || strings.HasPrefix(text, "<#") {
+				continue
 			}
-			if printers[name] || powershell && strings.HasPrefix(name, "write-") {
-				call = name
+			if text == "{" {
+				owners = append(owners, bodies[match[0]])
+			} else if text == "}" && len(owners) > 0 {
+				owners = owners[:len(owners)-1]
 			}
-			boundary = false
-			continue
-		}
-		if call == "" {
-			continue
-		}
-		if text[0] != '\'' && text[0] != '"' {
-			if strings.Contains(text, "(") || call == "printf" && text == "-v" {
-				call = ""
+			if strings.ContainsAny(text, ";{}\n") && len(text) == 1 || boundary && !powershell && text == "then" {
+				call, boundary, escapes, argument = "", true, false, 0
+				continue
 			}
-			if call == "echo" && strings.HasPrefix(text, "-") {
-				for _, option := range text[1:] {
-					if option == 'e' || option == 'E' {
-						escapes = option == 'e'
+			if boundary {
+				name := text
+				if powershell {
+					name = strings.ToLower(name)
+				}
+				if printers[name] || powershell && strings.HasPrefix(name, "write-") {
+					call = name
+					for _, owner := range owners {
+						printers[owner] = true
 					}
 				}
+				boundary = false
+				continue
 			}
-			continue
-		}
-		if strings.Contains(text, "\n") {
-			continue
-		}
-		value := text[1 : len(text)-1]
-		if powershell {
-			if text[0] == '\'' {
+			// Unquoted words never span lines, so only quoted multiline strings stop here.
+			if call == "" || strings.Contains(text, "\n") {
+				continue
+			}
+			if text[0] != '\'' && text[0] != '"' {
+				if strings.Contains(text, "(") || call == "printf" && text == "-v" {
+					call = ""
+				}
+				if call == "echo" && strings.HasPrefix(text, "-") {
+					if option := strings.LastIndexAny(text, "eE"); option > 0 {
+						escapes = text[option] == 'e'
+					}
+				}
+				continue
+			}
+			value := text[1 : len(text)-1]
+			switch {
+			case powershell && text[0] == '\'':
 				value = strings.ReplaceAll(value, "''", "'")
-			} else {
-				value = strings.NewReplacer("`n", "\n", "`t", "\t", "`e", "\x1b", "`\"", "\"", "``", "`").Replace(value)
-				value = strings.ReplaceAll(value, "\"\"", "\"")
-			}
-		} else {
-			if call == "printf" && argument == 0 || escapes {
+			case powershell:
+				value = strings.ReplaceAll(strings.NewReplacer("`n", "\n", "`t", "\t", "`e", "\x1b", "`\"", "\"", "``", "`").Replace(value), "\"\"", "\"")
+			case call == "printf" && argument == 0 || escapes:
 				value, _, _ = expand.Format(nil, strings.ReplaceAll(value, "%", "%%"), nil)
-			} else if text[0] == '"' {
+			case text[0] == '"':
 				value = strings.NewReplacer(`\\`, `\`, `\"`, `"`).Replace(value)
 			}
-		}
-		for colorPrefix.MatchString(value) {
 			value = colorPrefix.ReplaceAllString(value, "")
+			if text[0] == '"' && (strings.Contains(value, "$") || !powershell && strings.Contains(value, "`")) {
+				continue
+			}
+			argument++
+			messages = append(messages, example{value, bytes.Count(source[:match[0]], []byte{'\n'}) + 1})
 		}
-		if text[0] == '"' && (strings.Contains(value, "$") || !powershell && strings.Contains(value, "`")) {
-			continue
-		}
-		argument++
-		messages = append(messages, example{value, line})
 	}
 	return messages
 }
@@ -188,11 +186,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		blockLine := -1
 		for _, message := range messages {
-			text := message.text
-			for colorPrefix.MatchString(text) {
-				text = colorPrefix.ReplaceAllString(text, "")
-			}
-			for value := range strings.SplitSeq(termtext.StripANSI(text), "\n") {
+			for value := range strings.SplitSeq(termtext.StripANSI(message.text), "\n") {
 				line := message.line
 				marker, key := markerFor(line)
 				if key != blockLine {

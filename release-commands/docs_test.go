@@ -13,6 +13,9 @@ func TestExamples(t *testing.T) {
 	}{
 		{"version output beside command", ".md", "```text\nstub v0.38.0 (commit abc)\nstub nope\n```", []exampleBlock{{commands: []example{{"stub v0.38.0 (commit abc)", 2}, {"stub nope", 3}}}}},
 		{"shell direct output", ".sh", "# installer\necho 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
+		{"shell inline then", ".sh", "if true; then echo 'stub nope'; fi", []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"shell multiline then", ".sh", "if true\nthen echo 'stub nope'\nfi", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
+		{"nonprinting helper", ".sh", `check() { test -f "$1"; }; check 'stub nope'`, nil},
 		{"shell printf literal", ".sh", `printf 'Get started: stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"printf escaped lines", ".sh", "# installer\nprintf 'Next:\\n\\tstub nope\\n'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
 		{"printf physical lines", ".sh", "printf 'Next:\\n\nstub nope\\n'", nil},
