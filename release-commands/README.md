@@ -70,11 +70,11 @@ kata started (pid 123)
 ```
 ````
 
-Installer comments use `# Not in the latest release yet` or `# release-commands: expected-failure`. A comment covers the messages printed from the lines below it, up to the next blank source line. The check reports the same removal notice when every command in that block passes. Use `# release-commands: prose` before installer status output that starts with a binary name. It excludes that output through the next blank source line. Put command instructions after a blank line so they remain checked.
+Installer comments use `# Not in the latest release yet`. A comment covers the messages printed from the lines below it, up to the next blank source line. The check reports the same removal notice when every command in that block passes.
 
 ## Fix a finding
 
-Use a command the release supports, publish a release containing it, or add the visible `Not in the latest release yet` note, with `#` before it in installers. Reserve `<!-- release-commands: expected-failure -->` and its installer form for output samples. Unquoted trailing shell comments stay out of findings. A finding starts with `README.md:42: kata future-command: v1.0.0 has no command "future-command"`. A missing binary finding means the downloaded archive doesn't contain the documented executable.
+Use a command the release supports, publish a release containing it, or add the visible `Not in the latest release yet` note, with `#` before it in installers. Reserve `<!-- release-commands: expected-failure -->` for output samples. Unquoted trailing shell comments stay out of findings. A finding starts with `README.md:42: kata future-command: v1.0.0 has no command "future-command"`. A missing binary finding means the downloaded archive doesn't contain the documented executable.
 
 ## Limits
 

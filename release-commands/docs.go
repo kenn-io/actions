@@ -12,6 +12,7 @@ import (
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -29,7 +30,7 @@ const note = "Not in the latest release yet"
 
 var (
 	markdownExtensions  = []string{".md", ".mdx", ".markdown"}
-	powershellCalls     = regexp.MustCompile(`(?im)(?:^|[;{}|(])[ \t]*([\w-]+)[ \t]+`)
+	powershellCalls     = regexp.MustCompile(`(?im)(?:^|[;{}|(&])[ \t]*([\w-]+)[ \t]+`)
 	powershellFunctions = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
 	powershellHelpers   = regexp.MustCompile(`(?im)^[ \t]*function\s+([\w-]+)\((?:\[string\])?(\$\w+)\)[ \t]*\{[ \t]*(write-[\w-]+)[ \t]+(\$\w+)(?:[ \t][^{}\r\n]*)?\}`)
 	powershellArguments = regexp.MustCompile(`^[ \t]*('(?:''|[^'\r\n])*'|"[^"\r\n]*")`)
@@ -64,6 +65,9 @@ func installerStrings(source []byte, powershell bool) ([]example, error) {
 		}
 		text := arg[1]
 		value := text[1 : len(text)-1]
+		if text[0] == '\'' {
+			value = strings.ReplaceAll(value, "''", "'")
+		}
 		if text[0] == '\'' || !strings.ContainsAny(value, "$`") {
 			messages = append(messages, example{text: value, line: bytes.Count(source[:match[3]], []byte{'\n'}) + 1})
 		}
@@ -110,7 +114,7 @@ func shellStrings(source []byte) ([]example, error) {
 	// Helpers forward their first argument directly to a printer.
 	printers := map[string]bool{"echo": true, "printf": true}
 	prints := func(call *syntax.CallExpr) bool {
-		return len(call.Args) > 1 && (call.Args[0].Lit() == "echo" || call.Args[0].Lit() == "printf" && call.Args[1].Lit() != "-v")
+		return len(call.Args) > 1 && (call.Args[0].Lit() == "echo" || call.Args[0].Lit() == "printf" && unquote(call.Args[1]) != "-v")
 	}
 	syntax.Walk(tree, func(node syntax.Node) bool {
 		function, ok := node.(*syntax.FuncDecl)
@@ -172,7 +176,7 @@ func shellStrings(source []byte) ([]example, error) {
 			if len(text) < 2 || text[0] != '\'' && text[0] != '"' || text[len(text)-1] != text[0] {
 				continue
 			}
-			value := text[1 : len(text)-1]
+			value := unquote(arg)
 			if quoted, ok := arg.Parts[0].(*syntax.DblQuoted); ok && slices.ContainsFunc(quoted.Parts, func(part syntax.WordPart) bool { _, literal := part.(*syntax.Lit); return !literal }) {
 				continue
 			}
@@ -181,7 +185,10 @@ func shellStrings(source []byte) ([]example, error) {
 			}
 			values := []string{value}
 			if name == "printf" && i == 0 {
-				values = strings.Split(strings.NewReplacer(`\\`, `\`, `\n`, "\n", `\t`, "\t").Replace(value), "\n")
+				if strings.Contains(strings.ReplaceAll(value, "%%", ""), "%") {
+					continue
+				}
+				values = strings.Split(strings.NewReplacer(`\\`, `\`, `\n`, "\n", `\t`, "\t", "%%", "%").Replace(value), "\n")
 			}
 			for _, value := range values {
 				messages = append(messages, example{text: value, line: int(arg.Pos().Line())})
@@ -190,6 +197,11 @@ func shellStrings(source []byte) ([]example, error) {
 		return false
 	})
 	return messages, nil
+}
+
+func unquote(word *syntax.Word) string {
+	value, _ := expand.Literal(nil, word)
+	return value
 }
 
 // visible returns the text a reader sees in node, so emphasis around the note still counts.
@@ -230,15 +242,8 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 				if previous == "" {
 					break
 				}
-				if strings.HasPrefix(previous, "#") {
-					switch {
-					case strings.Contains(previous, note):
-						return "unreleased note", line - 1
-					case strings.Contains(previous, "release-commands: expected-failure"):
-						return "expected-failure marker", line - 1
-					case strings.Contains(previous, "release-commands: prose"):
-						return "prose", line - 1
-					}
+				if strings.HasPrefix(previous, "#") && strings.Contains(previous, note) {
+					return "unreleased note", line - 1
 				}
 				line--
 			}
@@ -257,9 +262,6 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 				flush()
 				current.marker = marker
 				blockLine = key
-			}
-			if marker == "prose" {
-				continue
 			}
 			for candidate, more := message.text, true; more; _, candidate, more = strings.Cut(candidate, ":") {
 				if add(candidate, message.line) {
