@@ -26,9 +26,8 @@ type exampleBlock struct {
 
 const note = "Not in the latest release yet"
 
-var markdownExtensions = []string{".md", ".mdx", ".markdown"}
-
 var (
+	markdownExtensions  = []string{".md", ".mdx", ".markdown"}
 	powershellCalls     = regexp.MustCompile(`(?im)(?:^|[;{}|])[ \t]*([\w-]+)[ \t]+`)
 	powershellFunctions = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
 	powershellHelpers   = regexp.MustCompile(`(?im)^[ \t]*function\s+([\w-]+)\((?:\[string\])?(\$\w+)\)[ \t]*\{[ \t]*(write-[\w-]+)[ \t]+(\$\w+)[^{}\r\n]*\}`)
