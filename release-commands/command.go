@@ -32,7 +32,11 @@ func commands(line string) ([][]string, error) {
 		if line[start] != '<' && line[start] != '[' {
 			continue
 		}
-		end := strings.IndexAny(line[start:], ">]")
+		closing := byte(']')
+		if line[start] == '<' {
+			closing = '>'
+		}
+		end := strings.IndexByte(line[start:], closing)
 		if end < 0 || strings.ContainsAny(line[start+1:start+end], " \t\n<>") {
 			continue
 		}
@@ -114,22 +118,6 @@ func commentIndex(source string) int {
 		}
 	}
 	return len(source)
-}
-
-// commandName reads the executable even when later words have invalid shell syntax.
-func commandName(source string) string {
-	for word, err := range syntax.NewParser().WordsSeq(strings.NewReader(source)) {
-		if err != nil {
-			break
-		}
-		prefix, _, assigned := strings.Cut(source[word.Pos().Offset():word.End().Offset()], "=")
-		if assigned && syntax.ValidName(prefix) {
-			continue
-		}
-		name, _ := expand.Literal(shellExpansion, word)
-		return name
-	}
-	return ""
 }
 
 func synopses(source string) []string {

@@ -70,19 +70,15 @@ func TestReleaseCommands(t *testing.T) {
 		line                                int
 		binaries                            []string
 	}{
+		{"nested host synopsis flag", ".md", "`stub run file [--bogus <host[:port]>]`", "unknown flag: --bogus", "", 1, []string{"stub"}},
 		{"powershell ignored parameter", ".ps1", "function Write-Info([string]$Message) { Write-Host 'Ready' }\nWrite-Info 'stub nope'", "", "", 0, []string{"stub"}},
 		{"printf assignment helper", ".sh", `remember() { printf -v message '%s' "$1"; }; remember 'stub nope'`, "", "", 0, []string{"stub"}},
-		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", "", 1, []string{"stub", "stub-helper"}},
 		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 5, []string{"stub"}},
-		{"shell marker hint", ".sh", "echo 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, "", 1, []string{"stub"}},
 		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, "", 1, []string{"stub"}},
-		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for unreleased commands, add "Not in the latest release yet" before the block; for output samples, add <!-- release-commands: expected-failure -->`, "", 3, []string{"stub"}},
-		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", "", 0, []string{"stbu"}},
+		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"`, "", 3, []string{"stub"}},
 		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", "", 1, []string{"stub", "stub-helper"}},
 		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", "", 0, []string{"stub", "stub-helper"}},
 		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", "", 0, []string{"stub"}},
-		{"mdx marker hint", ".mdx", "`stub nope`", `for output samples, add <!-- release-commands: expected-failure -->`, "", 1, []string{"stub"}},
-		{"unsupported extension", ".txt", "stub nope", "unsupported file type", "", 0, []string{"stub"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
@@ -113,19 +109,11 @@ func TestReleaseCommands(t *testing.T) {
 }
 
 func TestReleaseCommandsNotice(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "example,one.md")
-	require.NoError(t, os.WriteFile(file, []byte("Not in the latest release yet\n\n`stub run 100%`"), 0o600))
-	for _, test := range []struct{ name, actions, want string }{
-		{"local", "", file + ":3: passes; remove unreleased note: stub run 100%\n"},
-		{"actions", "true", "::notice file=" + filepath.Dir(file) + "/example%2Cone.md,line=3::passes; remove unreleased note: stub run 100%25\n"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("GITHUB_ACTIONS", test.actions)
-			var out, errOut bytes.Buffer
-			require.Equal(t, 0, run(t.Context(), []string{"--archive", fixture, "--binary", "stub", file}, &out, &errOut), errOut.String())
-			require.Equal(t, test.want, out.String())
-		})
-	}
+	file := filepath.Join(t.TempDir(), "example.md")
+	require.NoError(t, os.WriteFile(file, []byte("Not in the latest release yet\n\n`stub run file`"), 0o600))
+	var out, errOut bytes.Buffer
+	require.Equal(t, 0, run(t.Context(), []string{"--archive", fixture, "--binary", "stub", file}, &out, &errOut), errOut.String())
+	require.Equal(t, file+":3: passes; remove unreleased note: stub run file\n", out.String())
 }
 
 func TestReleaseCommandsHelpCache(t *testing.T) {

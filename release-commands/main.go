@@ -52,14 +52,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	}
 	cache := helpCache{}
 	failed := false
-	referenced := map[string]bool{}
 	for _, file := range flags.Args() {
-		markerHint := "# release-commands: expected-failure"
-		noteHint := "# " + note
-		if slices.Contains([]string{".md", ".mdx", ".markdown"}, filepath.Ext(file)) {
-			markerHint = "<!-- release-commands: expected-failure -->"
-			noteHint = note
-		}
 		data, err := os.ReadFile(file)
 		var blocks []exampleBlock
 		if err == nil {
@@ -74,15 +67,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			blockFailed, firstChecked := false, len(block.commands)
 			for index, example := range block.commands {
 				problem := ""
-				invocations, err := commands(example.text)
-				name := commandName(example.text)
-				referenced[name] = true
-				if err != nil && slices.Contains(*binaries, name) && paths[name] == "" {
-					problem = fmt.Sprintf("%s: not in %s", name, filepath.Base(*archive))
-				}
-				for _, args := range invocations {
-					referenced[args[0]] = true
-				}
+				invocations, _ := commands(example.text)
 				for _, args := range invocations {
 					if !slices.Contains(*binaries, args[0]) {
 						continue
@@ -94,7 +79,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 						break
 					}
 					if err := cache.check(ctx, binary, args[1:]); err != nil {
-						problem = fmt.Sprintf("%s %s; for unreleased commands, add %q before the block; for output samples, add %s", *release, err, noteHint, markerHint)
+						problem = fmt.Sprintf("%s %s", *release, err)
 						break
 					}
 				}
@@ -107,20 +92,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			if firstChecked < len(block.commands) && !blockFailed && block.marker != "" {
 				first := block.commands[firstChecked]
 				message := fmt.Sprintf("passes; remove %s: %s", block.marker, strings.TrimSpace(first.text[:commentIndex(first.text)]))
-				if os.Getenv("GITHUB_ACTIONS") == "true" {
-					escape := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
-					property := strings.NewReplacer(":", "%3A", ",", "%2C")
-					fmt.Fprintf(out, "::notice file=%s,line=%d::%s\n", property.Replace(escape.Replace(file)), first.line, escape.Replace(message))
-				} else {
-					fmt.Fprintf(out, "%s:%d: %s\n", file, first.line, message)
-				}
+				fmt.Fprintf(out, "%s:%d: %s\n", file, first.line, message)
 			}
-		}
-	}
-	for _, name := range *binaries {
-		if paths[name] == "" && !referenced[name] {
-			fmt.Fprintf(errOut, "%s: not in %s\n", name, filepath.Base(*archive))
-			failed = true
 		}
 	}
 	if failed {

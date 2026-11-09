@@ -3,11 +3,9 @@ package main
 import (
 	"bytes"
 	"cmp"
-	"fmt"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/yuin/goldmark/v2/ast"
@@ -28,11 +26,10 @@ type exampleBlock struct {
 const note = "Not in the latest release yet"
 
 var (
-	powershellLiterals  = regexp.MustCompile(`(?s)'(?:''|[^'])*'|"(?:` + "`" + `.|""|[^"` + "`" + `])*"|<\#.*?\#>|\#[^\n]*`)
 	powershellCalls     = regexp.MustCompile(`(?im)(?:^|[;{}|])[ \t]*([\w-]+)[ \t]+`)
 	powershellFunctions = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
 	powershellHelpers   = regexp.MustCompile(`(?im)^[ \t]*function\s+([\w-]+)\((?:\[string\])?(\$\w+)\)[ \t]*\{[ \t]*(write-[\w-]+)[ \t]+(\$\w+)[^{}\r\n]*\}`)
-	powershellArguments = regexp.MustCompile(`^[ \t]*('(?:''|[^'\r\n])*'|"[^"\r\n]*"|[^\s;'"{}|#]+)`)
+	powershellArguments = regexp.MustCompile(`^[ \t]*('(?:''|[^'\r\n])*'|"[^"\r\n]*")`)
 )
 
 // installerStrings reads static, single-line output and one-step message helpers.
@@ -40,56 +37,32 @@ func installerStrings(source []byte, powershell bool) []example {
 	if !powershell {
 		return shellStrings(source)
 	}
-	// Mask strings and comments so their contents cannot introduce output calls.
-	code := append([]byte(nil), source...)
-	for _, match := range powershellLiterals.FindAllIndex(source, -1) {
-		for i := match[0]; i < match[1]; i++ {
-			if code[i] != '\n' {
-				code[i] = ' '
-			}
-		}
-	}
 	functions := map[string]bool{}
-	for _, match := range powershellFunctions.FindAllSubmatch(code, -1) {
+	for _, match := range powershellFunctions.FindAllSubmatch(source, -1) {
 		functions[strings.ToLower(string(match[1]))] = false
 	}
-	for _, match := range powershellHelpers.FindAllSubmatch(code, -1) {
+	for _, match := range powershellHelpers.FindAllSubmatch(source, -1) {
 		_, helper := functions[strings.ToLower(string(match[3]))]
 		if !helper && bytes.EqualFold(match[2], match[4]) {
 			functions[strings.ToLower(string(match[1]))] = true
 		}
 	}
 	var messages []example
-	for _, match := range powershellCalls.FindAllSubmatchIndex(code, -1) {
-		name := strings.ToLower(string(code[match[2]:match[3]]))
+	for _, match := range powershellCalls.FindAllSubmatchIndex(source, -1) {
+		name := strings.ToLower(string(source[match[2]:match[3]]))
 		forwarded, declared := functions[name]
 		if !forwarded && (declared || !strings.HasPrefix(name, "write-")) {
 			continue
 		}
 		rest := string(source[match[3]:])
-		metadata := false
-		for {
-			arg := powershellArguments.FindStringSubmatch(rest)
-			if arg == nil {
-				break
-			}
-			rest = rest[len(arg[0]):]
-			text := arg[1]
-			if strings.HasPrefix(text, "-") {
-				metadata = !slices.Contains([]string{"-object", "-message", "-messagedata", "-nonewline", "-noenumerate"}, strings.ToLower(text))
-				continue
-			}
-			if metadata {
-				metadata = false
-				continue
-			}
-			if len(text) > 1 && (text[0] == '\'' || text[0] == '"') {
-				value := text[1 : len(text)-1]
-				if text[0] == '\'' || !strings.ContainsAny(value, "$`") {
-					messages = append(messages, example{value, bytes.Count(source[:match[3]], []byte{'\n'}) + 1})
-				}
-			}
-			break
+		arg := powershellArguments.FindStringSubmatch(rest)
+		if arg == nil {
+			continue
+		}
+		text := arg[1]
+		value := text[1 : len(text)-1]
+		if text[0] == '\'' || !strings.ContainsAny(value, "$`") {
+			messages = append(messages, example{value, bytes.Count(source[:match[3]], []byte{'\n'}) + 1})
 		}
 	}
 	return messages
@@ -101,8 +74,8 @@ func shellStrings(source []byte) []example {
 	if err != nil {
 		return nil
 	}
-	// Index zero means all arguments. Only direct printers establish helpers.
-	printers := map[string]map[int]bool{"echo": {0: true}, "printf": {0: true}}
+	// Helpers forward their first argument directly to a printer.
+	printers := map[string]bool{"echo": true, "printf": true}
 	prints := func(call *syntax.CallExpr) bool {
 		return len(call.Args) > 1 && (call.Args[0].Lit() == "echo" || call.Args[0].Lit() == "printf" && call.Args[1].Lit() != "-v")
 	}
@@ -126,17 +99,8 @@ func shellStrings(source []byte) []example {
 						if _, ok := node.(*syntax.CmdSubst); ok {
 							return false
 						}
-						if param, ok := node.(*syntax.ParamExp); ok {
-							index, err := strconv.Atoi(param.Param.Value)
-							if param.Param.Value == "@" || param.Param.Value == "*" {
-								index, err = 0, nil
-							}
-							if err == nil && (index > 0 || param.Param.Value == "@" || param.Param.Value == "*") {
-								if printers[function.Name.Value] == nil {
-									printers[function.Name.Value] = map[int]bool{}
-								}
-								printers[function.Name.Value][index] = true
-							}
+						if param, ok := node.(*syntax.ParamExp); ok && param.Param.Value == "1" {
+							printers[function.Name.Value] = true
 						}
 						return true
 					})
@@ -164,7 +128,7 @@ func shellStrings(source []byte) []example {
 			return false
 		}
 		for i, arg := range call.Args[1:] {
-			if (!printed[0] && !printed[i+1]) || len(arg.Parts) != 1 {
+			if !printed || name != "echo" && name != "printf" && i != 0 || len(arg.Parts) != 1 {
 				continue
 			}
 			text := string(source[arg.Pos().Offset():arg.End().Offset()])
@@ -196,19 +160,16 @@ func visible(node ast.Node, source []byte) string {
 
 func examples(file string, source []byte, binaries []string) ([]exampleBlock, error) {
 	markdown := slices.Contains([]string{".md", ".mdx", ".markdown"}, filepath.Ext(file))
-	if !markdown && filepath.Ext(file) != ".sh" && filepath.Ext(file) != ".ps1" {
-		return nil, fmt.Errorf("%s: unsupported file type", file)
-	}
 	var result []exampleBlock
 	var current exampleBlock
 	add := func(value string, line int) bool {
 		value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "$ "))
-		// An installer message that doesn't parse as a shell command is prose.
+		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
-		if err != nil && !markdown {
+		if err != nil {
 			return false
 		}
-		if slices.Contains(binaries, commandName(value)) || slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
+		if slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
 			current.commands = append(current.commands, example{text: value, line: line})
 			return true
 		}
@@ -264,19 +225,11 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		var blocks []exampleBlock
 		pending := ""
 		for child := parent.FirstChild(); child != nil; child = child.NextSibling() {
-			markerNode := child
-			for {
-				quote, ok := markerNode.(*ast.Blockquote)
-				if !ok || quote.ChildCount() != 1 {
-					break
-				}
-				markerNode = quote.FirstChild()
-			}
-			if html, ok := markerNode.(*ast.HTMLBlock); ok && strings.Contains(html.Value.Str(source), "<!-- release-commands: expected-failure -->") {
+			if html, ok := child.(*ast.HTMLBlock); ok && strings.Contains(html.Value.Str(source), "<!-- release-commands: expected-failure -->") {
 				pending = "expected-failure marker"
 				continue
 			}
-			if markerNode.Kind() == ast.KindParagraph && strings.HasPrefix(visible(markerNode, source), note) {
+			if child.Kind() == ast.KindParagraph && strings.HasPrefix(visible(child, source), note) {
 				pending = "unreleased note"
 				continue
 			}
