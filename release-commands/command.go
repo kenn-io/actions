@@ -55,7 +55,7 @@ func commands(line string) ([][]string, error) {
 				if err != nil {
 					return false
 				}
-				if value != "..." && value != "…" {
+				if word.Lit() != "..." && word.Lit() != "…" {
 					args = append(args, value)
 				}
 			}

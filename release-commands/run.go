@@ -165,10 +165,10 @@ func check(ctx context.Context, binary string, args []string) error {
 			continue
 		}
 		child, err := help(ctx, binary, append(slices.Clone(current.path[1:]), word))
+		if err != nil {
+			return err
+		}
 		if n := len(current.path); len(child.path) == n+1 && slices.Equal(child.path[:n], current.path) && (child.path[n] == word || slices.Contains(child.aliases, word)) {
-			if err != nil {
-				return err
-			}
 			current = child
 			continue
 		}

@@ -19,6 +19,7 @@ func TestCommands(t *testing.T) {
 		{"parse failure", "FOO=1 stub run (", nil},
 		{"process substitution", "stub completion bash <(stub completion bash)", [][]string{{"stub", "completion", "bash", "0"}, {"stub", "completion", "bash"}}},
 		{"cobra placeholders", "stub serve [flags] [command]", [][]string{{"stub", "serve"}}},
+		{"quoted ellipsis value", `stub plain --log.level "..." [--no-such-flag] ... …`, [][]string{{"stub", "plain", "--log.level", "...", "--no-such-flag"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := commands(test.source)
@@ -30,4 +31,11 @@ func TestCommands(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestQuotedEllipsisFlagValue(t *testing.T) {
+	invocations, err := commands(`stub plain --log.level "..." [--no-such-flag]`)
+	require.NoError(t, err)
+	require.Len(t, invocations, 1)
+	require.ErrorContains(t, check(t.Context(), fixtureBinary, invocations[0][1:]), "unknown flag: --no-such-flag")
 }
