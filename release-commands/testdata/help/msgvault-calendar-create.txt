@@ -1,0 +1,24 @@
+Usage:
+  msgvault calendar create <calendar-id> [flags]
+
+Flags:
+      --all-day                date-only event; --to is the exclusive end date
+      --attendees strings      replace guest email list (comma-separated; empty clears)
+      --description string     event description
+      --from string            start: RFC3339, or local YYYY-MM-DDTHH:MM with --tz
+  -h, --help                   help for create
+      --location string        event location
+      --reminder stringArray   popup:minutes, email:minutes, default, or none (repeatable)
+      --rrule stringArray      recurrence RRULE (repeatable; empty clears)
+      --summary string         event title (explicit empty clears on update)
+      --to string              end: RFC3339, or local YYYY-MM-DDTHH:MM with --tz
+      --tz string              IANA time zone for local times and recurrence
+
+Inherited Flags:
+      --account string        configured calendar source name or OAuth account (required)
+      --dry-run               verify access and print the proposed changes without writing
+      --json                  print the complete result and archive receipts as JSON
+      --read-only             forbid every event mutation
+      --send-updates string   guest notifications: none, all, or externalOnly (default "none")
+
+Global Flags: --agent-allow-insecure, --agent-token-file, --agent-url, --config, --home, --local, --log-file, --log-level, --log-sql, --log-sql-slow-ms, --no-log-file, -v/--verbose (see 'msgvault --help')

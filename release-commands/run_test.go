@@ -22,10 +22,11 @@ func TestDescribe(t *testing.T) {
 		{"prose flag absent", "      --ghost  prose\n\nUsage:\n  prose [flags]\nFlags:\n  -h, --help  help for prose\n", "ghost", nil, ""},
 		{"wrapped description absent", "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    --description-only  continuation\n", "description-only", nil, ""},
 		{"unsupported flag row", "Usage:\n  stub [flags]\nFlags:\n  --quiet   Quiet output\n", "", nil, "unsupported help"},
+		{"unsupported flag section", "Usage:\n  stub [flags]\nPersistent Flags:\n      --quiet   Quiet output\n", "", nil, "unsupported help: unrecognized flag section"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := describe(test.output)
+			got, err := describe(test.output, nil)
 			if test.finding != "" {
 				require.ErrorContains(t, err, test.finding)
 				return
@@ -111,4 +112,39 @@ func TestHelpCache(t *testing.T) {
 		"stub help named": 1, "stub help named broken": 2, "stub help malformed": 2,
 		"other help": 1, "other help group": 1, "other help group absent": 1,
 	}, counts)
+}
+
+func TestReleasedHelp(t *testing.T) {
+	rootOutput, err := os.ReadFile("testdata/help/msgvault-root.txt")
+	require.NoError(t, err)
+	root, err := describe(string(rootOutput), nil)
+	require.NoError(t, err)
+	for _, test := range []struct {
+		file  string
+		flags []string
+	}{
+		{"msgvault-calendar-create", []string{"account", "json", "home", "local", "agent-url", "verbose"}},
+		{"msgvault-daemon-stop", []string{"home", "agent-url"}},
+		{"kata", []string{"json", "format", "quiet"}},
+		{"agentsview", []string{"json", "format"}},
+		{"docbank", []string{"json", "dest"}},
+		{"roborev", []string{"quiet", "repo"}},
+	} {
+		t.Run(test.file, func(t *testing.T) {
+			output, err := os.ReadFile("testdata/help/" + test.file + ".txt")
+			require.NoError(t, err)
+			got, err := describe(string(output), root.flags)
+			require.NoError(t, err)
+			for _, flag := range test.flags {
+				require.NotNil(t, got.flags.Lookup(flag), flag)
+			}
+		})
+	}
+	t.Run("compact names preserve local overrides", func(t *testing.T) {
+		output := "Usage:\n  msgvault test [flags]\nFlags:\n      --home   local override\nGlobal Flags: --home, --agent-url\n"
+		got, err := describe(output, root.flags)
+		require.NoError(t, err)
+		require.Nil(t, got.flags.Lookup("local"))
+		require.ErrorContains(t, got.flags.Parse([]string{"--home", "--bogus"}), "unknown flag: --bogus")
+	})
 }

@@ -1,0 +1,28 @@
+Usage:
+  roborev review [commit] or review [start] [end] [flags]
+
+Flags:
+      --agent string             agent to use (codex, claude-code, gemini, copilot, opencode, cursor, kiro, kilo, droid, pi, grok, muse)
+      --base string              base branch for --branch comparison (default: auto-detect)
+      --branch string[="HEAD"]   review all changes since branch diverged from base (optionally specify branch name)
+      --dirty                    review uncommitted changes instead of a commit
+      --fast                     shorthand for --reasoning fast
+  -h, --help                     help for review
+      --local                    run review locally without daemon (streams output to console)
+      --min-severity string      minimum severity threshold: critical, high, medium, low
+      --model string             model for agent (format varies: opencode uses provider/model, others use model name)
+      --panel string             review panel to fan out to (config panel name; 'none' forces single-agent)
+      --plan string              Superpowers implementation plan for --type goal
+      --provider string          provider for pi agent (e.g. anthropic, openai)
+  -q, --quiet                    suppress informational output and the usage block; runtime errors are still printed
+      --reasoning string         reasoning level: legacy presets fast, standard, thorough (default), maximum; exact tiers low, medium, high, xhigh, max
+      --repo string              path to git repository (default: current directory)
+      --sha string               commit SHA to review (used when no positional args) (default "HEAD")
+      --since string             review commits since this commit (exclusive, like git's .. range)
+      --spec string              Superpowers design spec for --type goal
+      --type string              review type (security, design, lookahead, test-value, goal)
+      --wait                     wait for review to complete and show result
+
+Global Flags:
+      --server string   daemon address (loopback, unix://, or explicit remote HTTPS base URL)
+  -v, --verbose         verbose output

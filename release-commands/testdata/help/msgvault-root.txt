@@ -1,0 +1,17 @@
+Usage:
+  msgvault [command]
+
+Flags:
+      --agent-allow-insecure      Allow plain HTTP for agent-delegated connections (trusted networks only)
+      --agent-token-file string   Path to a file containing the agent grant secret (requires --agent-url)
+      --agent-url string          Daemon URL for agent-delegated mode (requires --agent-token-file)
+      --config string             config file (default: ~/.msgvault/config.toml)
+  -h, --help                      help for msgvault
+      --home string               home directory (overrides MSGVAULT_HOME)
+      --local                     use local daemon instead of configured remote
+      --log-file string           override log file path (default: <data dir>/logs/msgvault-YYYY-MM-DD.log)
+      --log-level string          log level: debug, info, warn, error (default: info)
+      --log-sql                   log every SQL query at info level (verbose; for debugging)
+      --log-sql-slow-ms int       threshold in ms above which a SQL query is logged as slow (default 100; 0 uses the default)
+      --no-log-file               disable the log file for this run (stderr output stays on)
+  -v, --verbose                   verbose output (implies --log-level=debug)

@@ -1,0 +1,7 @@
+Usage:
+  msgvault daemon stop [flags]
+
+Flags:
+  -h, --help   help for stop
+
+Global Flags: --agent-allow-insecure, --agent-token-file, --agent-url, --config, --home, --local, --log-file, --log-level, --log-sql, --log-sql-slow-ms, --no-log-file, -v/--verbose (see 'msgvault --help')

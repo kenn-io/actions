@@ -105,35 +105,14 @@ func code(source []byte) []byte {
 	return masked
 }
 
-// shellStrings reads output arguments from parsed calls, excluding redirects and heredocs.
+// shellStrings renders static printer calls and one-step message helpers.
 func shellStrings(source []byte) ([]example, error) {
 	tree, err := syntax.NewParser().Parse(bytes.NewReader(source), "")
 	if err != nil {
 		return nil, err
 	}
-	// Helpers forward their first argument directly to a printer.
-	printers := map[string]bool{"echo": true, "printf": true}
-	printedArgs := func(call *syntax.CallExpr) []*syntax.Word {
-		if len(call.Args) < 2 {
-			return nil
-		}
-		switch call.Args[0].Lit() {
-		case "echo":
-			return call.Args[1:]
-		case "printf":
-			format := strings.ReplaceAll(unquote(call.Args[1]), "%%", "")
-			if format == "-v" {
-				return nil
-			}
-			if !strings.Contains(format, "%") {
-				return call.Args[1:2]
-			}
-			if !strings.Contains(strings.ReplaceAll(format, "%s", ""), "%") {
-				return call.Args[2:]
-			}
-		}
-		return nil
-	}
+	helpers := map[string][]*syntax.CallExpr{}
+	probe := "\x00"
 	syntax.Walk(tree, func(node syntax.Node) bool {
 		function, ok := node.(*syntax.FuncDecl)
 		if !ok {
@@ -148,20 +127,9 @@ func shellStrings(source []byte) ([]example, error) {
 			if !ok {
 				return true
 			}
-			for _, arg := range printedArgs(call) {
-				syntax.Walk(arg, func(node syntax.Node) bool {
-					if _, ok := node.(*syntax.CmdSubst); ok {
-						return false
-					}
-					if param, ok := node.(*syntax.ParamExp); ok {
-						text := string(source[param.Pos().Offset():param.End().Offset()])
-						if text == "$1" || text == "${1}" {
-							printers[function.Name.Value] = true
-						}
-						return false
-					}
-					return true
-				})
+			args, static := shellWords(call, source, &probe)
+			if output, printed := shellOutput(args); static && printed && strings.Contains(output, probe) {
+				helpers[function.Name.Value] = append(helpers[function.Name.Value], call)
 			}
 			return false
 		})
@@ -176,35 +144,23 @@ func shellStrings(source []byte) ([]example, error) {
 		if !ok {
 			return true
 		}
-		if len(call.Args) < 2 {
+		args, static := shellWords(call, source, nil)
+		if !static || len(args) == 0 {
 			return false
 		}
-		name := call.Args[0].Lit()
-		args := printedArgs(call)
-		if name != "echo" && name != "printf" && printers[name] {
-			args = call.Args[1:2]
+		calls, parameter := []*syntax.CallExpr{call}, (*string)(nil)
+		if len(args) > 1 && len(helpers[args[0]]) > 0 {
+			calls, parameter = helpers[args[0]], &args[1]
 		}
-		for _, arg := range args {
-			if len(arg.Parts) != 1 {
-				continue
+		for _, printer := range calls {
+			words, static := args, true
+			if parameter != nil {
+				words, static = shellWords(printer, source, parameter)
 			}
-			text := string(source[arg.Pos().Offset():arg.End().Offset()])
-			if len(text) < 2 || text[0] != '\'' && text[0] != '"' || text[len(text)-1] != text[0] {
-				continue
-			}
-			value := unquote(arg)
-			if quoted, ok := arg.Parts[0].(*syntax.DblQuoted); ok && slices.ContainsFunc(quoted.Parts, func(part syntax.WordPart) bool { _, literal := part.(*syntax.Lit); return !literal }) {
-				continue
-			}
-			if arg.Pos().Line() != call.Pos().Line() || strings.Contains(value, "\n") {
-				continue
-			}
-			values := []string{value}
-			if name == "printf" && arg == call.Args[1] {
-				values = strings.Split(strings.NewReplacer(`\\`, `\`, `\n`, "\n", `\t`, "\t", "%%", "%").Replace(value), "\n")
-			}
-			for _, value := range values {
-				messages = append(messages, example{text: value, line: int(arg.Pos().Line())})
+			if output, printed := shellOutput(words); static && printed {
+				for text := range strings.SplitSeq(output, "\n") {
+					messages = append(messages, example{text: text, line: int(call.Pos().Line())})
+				}
 			}
 		}
 		return false
@@ -212,9 +168,86 @@ func shellStrings(source []byte) ([]example, error) {
 	return messages, nil
 }
 
-func unquote(word *syntax.Word) string {
-	value, _ := expand.Literal(nil, word)
-	return value
+// shellWords accepts literal words, or an unchanged first helper parameter.
+func shellWords(call *syntax.CallExpr, source []byte, parameter *string) ([]string, bool) {
+	if call.Pos().Line() != call.End().Line() {
+		return nil, false
+	}
+	config := &expand.Config{}
+	if parameter != nil {
+		config.Env = expand.FuncEnviron(func(string) string { return *parameter })
+	}
+	var args []string
+	for _, word := range call.Args {
+		static := true
+		syntax.Walk(word, func(node syntax.Node) bool {
+			switch node := node.(type) {
+			case nil, *syntax.Word, *syntax.Lit, *syntax.SglQuoted, *syntax.DblQuoted:
+				return true
+			case *syntax.ParamExp:
+				text := string(source[node.Pos().Offset():node.End().Offset()])
+				static = static && parameter != nil && (text == "$1" || text == "${1}")
+			default:
+				static = false
+			}
+			return false
+		})
+		if !static {
+			return nil, false
+		}
+		value, err := expand.Literal(config, word)
+		if err != nil {
+			return nil, false
+		}
+		args = append(args, value)
+	}
+	return args, true
+}
+
+func shellOutput(words []string) (string, bool) {
+	if len(words) < 2 {
+		return "", false
+	}
+	args := words[1:]
+	switch words[0] {
+	case "echo":
+		escapes := false
+		for len(args) > 0 && strings.HasPrefix(args[0], "-") && len(args[0]) > 1 && strings.Trim(args[0][1:], "neE") == "" {
+			for _, option := range args[0][1:] {
+				switch option {
+				case 'e':
+					escapes = true
+				case 'E':
+					escapes = false
+				}
+			}
+			args = args[1:]
+		}
+		output := strings.Join(args, " ")
+		if escapes {
+			rendered, _, err := expand.Format(nil, strings.ReplaceAll(output, "%", "%%"), nil)
+			return rendered, err == nil
+		}
+		return output, true
+	case "printf":
+		if args[0] == "-v" {
+			return "", false
+		}
+		format, args := args[0], args[1:]
+		var output strings.Builder
+		for {
+			rendered, used, err := expand.Format(nil, format, args)
+			if err != nil {
+				return "", false
+			}
+			output.WriteString(rendered)
+			args = args[used:]
+			if used == 0 || len(args) == 0 {
+				return output.String(), true
+			}
+		}
+	}
+	return "", false
 }
 
 // visible returns the text a reader sees in node, so emphasis around the note still counts.
@@ -237,7 +270,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "$ "))
 		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
-		if err == nil && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
+		if err == nil && len(invocations) > 0 && (markdown || slices.Contains(binaries, invocations[0][0])) && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
 			current.commands = append(current.commands, example{text: value, line: line, invocations: invocations})
 			return true
 		}

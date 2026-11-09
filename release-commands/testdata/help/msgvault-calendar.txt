@@ -1,0 +1,12 @@
+Usage:
+  msgvault calendar [command]
+
+Flags:
+      --account string        configured calendar source name or OAuth account (required)
+      --dry-run               verify access and print the proposed changes without writing
+  -h, --help                  help for calendar
+      --json                  print the complete result and archive receipts as JSON
+      --read-only             forbid every event mutation
+      --send-updates string   guest notifications: none, all, or externalOnly (default "none")
+
+Global Flags: --agent-allow-insecure, --agent-token-file, --agent-url, --config, --home, --local, --log-file, --log-level, --log-sql, --log-sql-slow-ms, --no-log-file, -v/--verbose (see 'msgvault --help')

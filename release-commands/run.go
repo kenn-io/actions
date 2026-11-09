@@ -47,7 +47,7 @@ func (cache helpCache) help(ctx context.Context, binary string, path []string) (
 	if err != nil {
 		return usage{}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(data)))
 	}
-	u, err := describe(string(data))
+	u, err := describe(string(data), cache[binary].flags)
 	if len(u.path) > len(path)+1 {
 		u.path, u.arguments = u.path[:len(path)+1], true
 	}
@@ -57,7 +57,7 @@ func (cache helpCache) help(ctx context.Context, binary string, path []string) (
 	return u, err
 }
 
-func describe(output string) (usage, error) {
+func describe(output string, root *pflag.FlagSet) (usage, error) {
 	u := usage{output: output, flags: pflag.NewFlagSet("release help", pflag.ContinueOnError)}
 	u.flags.SetOutput(io.Discard)
 	inUsage, hasChildren := false, false
@@ -101,7 +101,7 @@ func describe(output string) (usage, error) {
 	}
 	inFlags := false
 	for line := range strings.SplitSeq(output, "\n") {
-		if line == "Flags:" || line == "Global Flags:" {
+		if line == "Flags:" || line == "Global Flags:" || line == "Inherited Flags:" {
 			inFlags = true
 			continue
 		}
@@ -110,9 +110,16 @@ func describe(output string) (usage, error) {
 		}
 		flagLines := []string{line}
 		rest, compact := strings.CutPrefix(line, "Global: ")
+		names, compactNames := strings.CutPrefix(line, "Global Flags: ")
+		if compactNames {
+			rest, _, _ = strings.Cut(names, " (see ")
+			compact = true
+		}
 		if compact {
 			rest, _, _ = strings.Cut(rest, ". Details:")
 			flagLines = strings.Split(rest, ",")
+		} else if !strings.HasPrefix(line, " ") && (strings.Contains(line, "Flags:") || strings.HasPrefix(line, "Global:")) {
+			return u, errors.New("unsupported help: unrecognized flag section")
 		}
 		if !inFlags && !compact {
 			continue
@@ -135,6 +142,14 @@ func describe(output string) (usage, error) {
 			}
 			name := strings.TrimPrefix(match[2], "--")
 			if u.flags.Lookup(name) != nil {
+				continue
+			}
+			if compactNames {
+				if root == nil || root.Lookup(name) == nil {
+					return u, fmt.Errorf("unsupported help: no root definition for --%s", name)
+				}
+				flag := *root.Lookup(name)
+				u.flags.AddFlag(&flag)
 				continue
 			}
 			u.flags.StringP(name, match[1], "", "")
