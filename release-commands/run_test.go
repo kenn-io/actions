@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -68,4 +71,36 @@ func TestCheck(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHelpCache(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	wrapper := fmt.Sprintf("#!/bin/sh\nprintf '%%s %%s\\n' \"${0##*/}\" \"$*\" >> %q\nif [ \"$2\" = malformed ]; then echo unsupported; exit 0; fi\nexec %q \"$@\"\n", log, fixtureBinary)
+	for _, name := range []string{"stub", "other"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(wrapper), 0o700))
+	}
+	cache := helpCache{}
+	for _, test := range []struct{ binary, arguments string }{
+		{"stub", "group absent"},
+		{"stub", "group absent"},
+		{"stub", "named broken"},
+		{"stub", "named broken"},
+		{"stub", "malformed"},
+		{"stub", "malformed"},
+		{"other", "group absent"},
+	} {
+		_ = cache.check(t.Context(), filepath.Join(dir, test.binary), strings.Fields(test.arguments))
+	}
+	data, err := os.ReadFile(log)
+	require.NoError(t, err)
+	counts := map[string]int{}
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
+		counts[line]++
+	}
+	require.Equal(t, map[string]int{
+		"stub help": 1, "stub help group": 1, "stub help group absent": 1,
+		"stub help named": 1, "stub help named broken": 2, "stub help malformed": 2,
+		"other help": 1, "other help group": 1, "other help group absent": 1,
+	}, counts)
 }

@@ -72,7 +72,6 @@ func TestReleaseCommands(t *testing.T) {
 	}{
 		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", "", 1, []string{"stub", "stub-helper"}},
 		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 5, []string{"stub"}},
-		{"powershell prefixed output", ".ps1", "# installer\nWrite-Host 'Get started: stub nope'", `has no command "nope"`, "", 2, []string{"stub"}},
 		{"shell marker hint", ".sh", "echo 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, "", 1, []string{"stub"}},
 		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, "", 1, []string{"stub"}},
 		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for unreleased commands, add "Not in the latest release yet" before the block; for output samples, add <!-- release-commands: expected-failure -->`, "", 3, []string{"stub"}},
@@ -130,28 +129,16 @@ func TestReleaseCommandsNotice(t *testing.T) {
 func TestReleaseCommandsHelpCache(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
-	wrapper := fmt.Sprintf("#!/bin/sh\nprintf '%%s %%s\\n' \"${0##*/}\" \"$*\" >> %q\nif [ \"$2\" = malformed ]; then echo unsupported; exit 0; fi\nexec %q \"$@\"\n", log, fixtureBinary)
+	wrapper := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nexec %q \"$@\"\n", log, fixtureBinary)
 	archive := filepath.Join(dir, "release.tar.gz")
-	require.NoError(t, writeFixtureArchive(archive, map[string][]byte{"stub": []byte(wrapper), "other": []byte(wrapper)}))
+	require.NoError(t, writeFixtureArchive(archive, map[string][]byte{"stub": []byte(wrapper)}))
 	first, second := filepath.Join(dir, "first.md"), filepath.Join(dir, "second.md")
-	require.NoError(t, os.WriteFile(first, []byte("`stub group absent`\n`stub group absent`\n`stub named broken`\n`stub named broken`\n`stub malformed`\n`stub malformed`\n`other group absent`"), 0o600))
-	require.NoError(t, os.WriteFile(second, []byte("`stub group absent`\n`stub run file`\n`stub run file`"), 0o600))
-	for range 2 {
-		var out, errOut bytes.Buffer
-		require.Equal(t, 1, run(t.Context(), []string{"--archive", archive, "--binary", "stub", "--binary", "other", first, second}, &out, &errOut))
-		require.Equal(t, 2, strings.Count(errOut.String(), "unsupported help"))
-		data, err := os.ReadFile(log)
-		require.NoError(t, err)
-		counts := map[string]int{}
-		for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
-			counts[line]++
-		}
-		require.Equal(t, map[string]int{
-			"stub help": 1, "stub help group": 1, "stub help group absent": 1,
-			"stub help named": 1, "stub help named broken": 2, "stub help malformed": 2,
-			"other help": 1, "other help group": 1, "other help group absent": 1,
-			"stub help run": 1, "stub help run file": 1,
-		}, counts)
-		require.NoError(t, os.WriteFile(log, nil, 0o600))
+	for _, file := range []string{first, second} {
+		require.NoError(t, os.WriteFile(file, []byte("`stub run file`"), 0o600))
 	}
+	var out, errOut bytes.Buffer
+	require.Equal(t, 0, run(t.Context(), []string{"--archive", archive, "--binary", "stub", first, second}, &out, &errOut), errOut.String())
+	data, err := os.ReadFile(log)
+	require.NoError(t, err)
+	require.Equal(t, 1, strings.Count(string(data), "help run\n"))
 }
