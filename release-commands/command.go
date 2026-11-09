@@ -30,8 +30,11 @@ func commands(line string) ([][]string, error) {
 			continue
 		}
 		value := line[start : start+end+1]
-		replacement := "0"
-		if value == "<command>" || value == "<subcommand>" || value == "[flags]" || value == "[command]" {
+		replacement, err := syntax.Quote(value, syntax.LangBash)
+		if err != nil {
+			return nil, err
+		}
+		if value == "[flags]" || value == "[command]" {
 			replacement = ""
 		} else if line[start] == '[' {
 			continue

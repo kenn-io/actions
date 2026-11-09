@@ -25,21 +25,32 @@ type usage struct {
 	flags     *pflag.FlagSet
 }
 
-func help(ctx context.Context, binary string, path []string) (usage, error) {
-	home, err := os.MkdirTemp("", "release-help-*")
-	if err != nil {
-		return usage{}, err
+// NUL separates arguments because executable paths and process arguments cannot contain it.
+type helpCache map[string]string
+
+func (cache helpCache) help(ctx context.Context, binary string, path []string) (usage, error) {
+	key := strings.Join(append([]string{binary}, path...), "\x00")
+	output, found := cache[key]
+	if !found {
+		home, err := os.MkdirTemp("", "release-help-*")
+		if err != nil {
+			return usage{}, err
+		}
+		defer os.RemoveAll(home)
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, binary, append([]string{"help"}, path...)...)
+		cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
+		data, err := cmd.CombinedOutput()
+		if err != nil {
+			return usage{}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(data)))
+		}
+		output = string(data)
 	}
-	defer os.RemoveAll(home)
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, append([]string{"help"}, path...)...)
-	cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return usage{}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(output)))
+	u, err := describe(output)
+	if err == nil {
+		cache[key] = output
 	}
-	u, err := describe(string(output))
 	if len(u.path) > len(path)+1 {
 		u.path, u.arguments = u.path[:len(path)+1], true
 	}
@@ -135,8 +146,8 @@ func describe(output string) (usage, error) {
 	return u, nil
 }
 
-func check(ctx context.Context, binary string, args []string) error {
-	current, err := help(ctx, binary, nil)
+func (cache helpCache) check(ctx context.Context, binary string, args []string) error {
+	current, err := cache.help(ctx, binary, nil)
 	if err != nil {
 		return err
 	}
@@ -162,10 +173,16 @@ func check(ctx context.Context, binary string, args []string) error {
 			}
 			continue
 		}
+		if placeholder(word) {
+			if !current.arguments {
+				args = args[:i]
+			}
+			break
+		}
 		if word == "help" && len(current.path) == 1 {
 			continue
 		}
-		child, err := help(ctx, binary, append(slices.Clone(current.path[1:]), word))
+		child, err := cache.help(ctx, binary, append(slices.Clone(current.path[1:]), word))
 		if err != nil {
 			return err
 		}

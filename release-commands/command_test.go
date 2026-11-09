@@ -13,8 +13,9 @@ func TestCommands(t *testing.T) {
 	}{
 		{"synopsis comment", "stub group #json|yaml <broken", [][]string{{"stub", "group"}}},
 		{"quoted comment", `stub run '#json|yaml'`, [][]string{{"stub", "run", "#json|yaml"}}},
-		{"alias", "stub group alias <id> --limit <n>", [][]string{{"stub", "group", "alias", "0", "--limit", "0"}}},
-		{"absent alternative", "stub group child|nope <id>", [][]string{{"stub", "group", "child", "0"}, {"stub", "group", "nope", "0"}}},
+		{"angle placeholder", "stub completion <shell>", [][]string{{"stub", "completion", "<shell>"}}},
+		{"alias", "stub group alias <id> --limit <n>", [][]string{{"stub", "group", "alias", "<id>", "--limit", "<n>"}}},
+		{"absent alternative", "stub group child|nope <id>", [][]string{{"stub", "group", "child", "<id>"}, {"stub", "group", "nope", "<id>"}}},
 		{"spaced synopsis alternatives", "stub run file [--config cfg | --bogus]", [][]string{{"stub", "run", "file", "--config", "cfg"}, {"stub", "run", "file", "--bogus"}}},
 		{"synopsis continuation", "stub group child ID [--bogus]", [][]string{{"stub", "group", "child", "ID", "--bogus"}}},
 		{"shell operators", "stub run file | cat && stub nope", [][]string{{"stub", "run", "file"}, {"cat"}, {"stub", "nope"}}},

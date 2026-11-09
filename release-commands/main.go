@@ -50,9 +50,14 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
+	cache := helpCache{}
 	failed := false
 	referenced := map[string]bool{}
 	for _, file := range flags.Args() {
+		markerHint := "# release-commands: expected-failure"
+		if filepath.Ext(file) == ".md" {
+			markerHint = "<!-- release-commands: expected-failure -->"
+		}
 		data, err := os.ReadFile(file)
 		var blocks []exampleBlock
 		if err == nil {
@@ -64,14 +69,15 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			continue
 		}
 		for _, block := range blocks {
-			blockFailed := false
+			blockFailed, blockChecked := false, false
 			for _, example := range block.commands {
 				problem := ""
 				invocations, err := commands(example.text)
-				if err != nil {
-					problem = err.Error() + "; for output samples, add <!-- release-commands: expected-failure --> before the block"
+				name := commandName(example.text)
+				referenced[name] = true
+				if err != nil && slices.Contains(*binaries, name) && paths[name] == "" {
+					problem = fmt.Sprintf("%s: not in %s", name, filepath.Base(*archive))
 				}
-				referenced[commandName(example.text)] = true
 				for _, args := range invocations {
 					referenced[args[0]] = true
 				}
@@ -79,25 +85,26 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 					if !slices.Contains(*binaries, args[0]) {
 						continue
 					}
+					blockChecked = true
 					binary := paths[args[0]]
 					if binary == "" {
 						problem = fmt.Sprintf("%s: not in %s", args[0], filepath.Base(*archive))
 						break
 					}
-					if err := check(ctx, binary, args[1:]); err != nil {
-						problem = fmt.Sprintf("%s %s; for output samples, add <!-- release-commands: expected-failure --> before the block", *release, err)
+					if err := cache.check(ctx, binary, args[1:]); err != nil {
+						problem = fmt.Sprintf("%s %s; for output samples, add %s before the block", *release, err, markerHint)
 						break
 					}
 				}
 				blockFailed = blockFailed || problem != ""
 				if problem != "" && block.marker == "" {
-					fmt.Fprintf(errOut, "%s:%d: %s: %s\n", file, example.line, example.text, strings.Join(strings.Fields(problem), " "))
+					fmt.Fprintf(errOut, "%s:%d: %s: %s\n", file, example.line, strings.TrimSpace(example.text[:commentIndex(example.text)]), strings.Join(strings.Fields(problem), " "))
 					failed = true
 				}
 			}
-			if !blockFailed && block.marker != "" {
+			if blockChecked && !blockFailed && block.marker != "" {
 				first := block.commands[0]
-				fmt.Fprintf(out, "%s:%d: passes; remove %s: %s\n", file, first.line, block.marker, first.text)
+				fmt.Fprintf(out, "%s:%d: passes; remove %s: %s\n", file, first.line, block.marker, strings.TrimSpace(first.text[:commentIndex(first.text)]))
 			}
 		}
 	}

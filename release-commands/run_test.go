@@ -33,6 +33,10 @@ func TestDescribe(t *testing.T) {
 func TestCheck(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, arguments, finding string }{
+		{"symbolic completion child", "completion <shell>", ""},
+		{"symbolic child flag", "group <cmd> --child-only", ""},
+		{"symbolic argument flags", "plain <path> --bogus", "unknown flag: --bogus"},
+		{"concrete completion child", "completion missing", `has no command "missing"`},
 		{"disabled flag parsing", "unsafe file --help=false", ""},
 		{"group positional arguments", "named alice extra", ""},
 		{"placeholder positional argument", "named name extra", ""},
@@ -56,7 +60,7 @@ func TestCheck(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			err := check(t.Context(), fixtureBinary, strings.Fields(test.arguments))
+			err := (helpCache{}).check(t.Context(), fixtureBinary, strings.Fields(test.arguments))
 			if test.finding == "" {
 				require.NoError(t, err)
 			} else {
