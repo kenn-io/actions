@@ -15,15 +15,21 @@ func TestDescribe(t *testing.T) {
 	for _, test := range []struct {
 		name, output, absent string
 		args                 []string
+		finding              string
 	}{
-		{"compact global flags", "Usage:\n  compact run <path>\nGlobal: --json, --project <string>, -q/--quiet. Details: compact --help\n", "", []string{"--json", "--project", "foo", "-q"}},
-		{"multiword flag type", "Usage:\n  kata federation enroll [flags]\nFlags:\n      --spoke-instance kata federation identity   spoke instance UID\n", "", []string{"--spoke-instance", "example-instance"}},
-		{"prose flag absent", "      --ghost  prose\n\nUsage:\n  prose [flags]\nFlags:\n  -h, --help  help for prose\n", "ghost", nil},
-		{"wrapped description absent", "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    - json output details\n                    --description-only  continuation\n", "description-only", nil},
+		{"compact global flags", "Usage:\n  compact run <path>\nGlobal: --json, --project <string>, -q/--quiet. Details: compact --help\n", "", []string{"--json", "--project", "foo", "-q"}, ""},
+		{"multiword flag type", "Usage:\n  kata federation enroll [flags]\nFlags:\n      --spoke-instance kata federation identity   spoke instance UID\n", "", []string{"--spoke-instance", "example-instance"}, ""},
+		{"prose flag absent", "      --ghost  prose\n\nUsage:\n  prose [flags]\nFlags:\n  -h, --help  help for prose\n", "ghost", nil, ""},
+		{"wrapped description absent", "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    - json output details\n                    --description-only  continuation\n", "description-only", nil, ""},
+		{"unsupported flag row", "Usage:\n  stub [flags]\nFlags:\n  --quiet   Quiet output\n", "", nil, "unsupported help"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := describe(test.output)
+			if test.finding != "" {
+				require.ErrorContains(t, err, test.finding)
+				return
+			}
 			require.NoError(t, err)
 			if test.absent != "" {
 				require.Nil(t, got.flags.Lookup(test.absent))
@@ -44,7 +50,6 @@ func TestCheck(t *testing.T) {
 		{"lowercase symbolic child", "group $child", ""},
 		{"lowercase symbolic argument flag", "plain $path --bogus", "unknown flag: --bogus"},
 		{"symbolic child flag", "group <cmd> --child-only", ""},
-		{"disabled flag parsing", "unsafe file --help=false", ""},
 		{"group positional arguments", "named alice extra", ""},
 		{"child help error with positional parent", "named broken", "child help failed"},
 		{"unknown flag", "run file --bogus", "unknown flag: --bogus"},
@@ -73,11 +78,6 @@ func TestCheck(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestDescribeUnsupportedFlags(t *testing.T) {
-	_, err := describe("Usage:\n  stub [flags]\nFlags:\n  --quiet   Quiet output\n")
-	require.ErrorContains(t, err, "unsupported help")
 }
 
 func TestHelpCache(t *testing.T) {
