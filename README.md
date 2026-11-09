@@ -37,6 +37,16 @@ The preset does the following:
 - Exempts security fixes from the wait and the schedule.
 - Turns off the Dependency Dashboard. Its "Pending Status Checks" checkboxes
   open a pull request for an unaged release right away, which defeats the wait.
+- Excludes TypeScript `7.0.x`, including prereleases, because it lacks the
+  compiler API that `svelte-check` needs. Later `7.x` versions remain eligible.
+  The rule matches both the dependency name and package name `typescript`, so
+  explicit aliases such as `"@typescript/native": "npm:typescript@7.0.2"` remain
+  eligible for updates.
+
+Repositories extending this preset from `main` automatically inherit the
+constraint on their next Renovate run after it merges. Equivalent local
+`7.0.x` exclusions can then be removed. Stricter local `<7` overrides remain
+valid and should stay in place.
 
 A repository that needs the dashboard, for example for
 `dependencyDashboardApproval`, sets `"dependencyDashboard": true` itself. Do not
