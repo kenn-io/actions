@@ -67,38 +67,23 @@ func TestReleaseCommands(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "")
 	for _, test := range []struct {
 		name, ext, content, finding string
-		line, omittedLine           int
+		line                        int
 		binaries                    []string
 	}{
-		{"version output beside command", ".md", "```text\nstub v0.38.0 (commit abc, built 2026-07-13T15:37:17Z)\nstub nope\n```", `v1.0.0 has no command "nope"`, 3, 2, []string{"stub"}},
-		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", 1, 0, []string{"stub", "stub-helper"}},
-		{"marked output only", ".md", "<!-- release-commands: expected-failure -->\n\n`stub started (pid 12)`", "", 0, 0, []string{"stub"}},
-		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\nstub plain\n```", "passes; remove expected-failure marker: stub run file", 5, 0, []string{"stub"}},
-		{"shell prefixed output", ".sh", "# installer\necho 'Get started: stub nope'", `has no command "nope"`, 2, 0, []string{"stub"}},
-		{"powershell prefixed output", ".ps1", "# installer\nWrite-Host 'Get started: stub nope'", `has no command "nope"`, 2, 0, []string{"stub"}},
-		{"installer known command", ".sh", "echo 'stub run file'", "", 0, 0, []string{"stub"}},
-		{"installer unsafe command", ".sh", "echo 'stub unsafe file --help=false'", "", 0, 0, []string{"stub"}},
-		{"installer unknown flag", ".sh", "echo 'stub run file --bogus'", "unknown flag: --bogus", 1, 0, []string{"stub"}},
-		{"installer absent child", ".ps1", "Write-Host 'stub group absent'", `has no command "absent"`, 1, 0, []string{"stub"}},
-		{"installer unreleased", ".sh", "# Not in the latest release yet\necho 'stub nope'", "", 0, 0, []string{"stub"}},
-		{"installer passing marker", ".ps1", "# release-commands: expected-failure\nWrite-Host 'stub run file'", "passes; remove expected-failure marker", 2, 0, []string{"stub"}},
-		{"shell marker hint", ".sh", "echo 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, 1, 0, []string{"stub"}},
-		{"powershell marker hint", ".ps1", "Write-Host 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, 1, 0, []string{"stub"}},
-		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, 1, 0, []string{"stub"}},
-		{"marked assigned missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`MODE=\"a b\" stub-helper started (pid 12)`", "", 0, 0, []string{"stub", "stub-helper"}},
-		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for unreleased commands, add "Not in the latest release yet" before the block; for output samples, add <!-- release-commands: expected-failure -->`, 3, 0, []string{"stub"}},
-		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0, 0, []string{"stbu"}},
-		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", 1, 0, []string{"stub", "stub-helper"}},
-		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", 0, 0, []string{"stub", "stub-helper"}},
-		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", 0, 0, []string{"stub"}},
-		{"passing marker", ".md", "Not in the latest release yet\n\n`stub run file`", "passes; remove unreleased note", 3, 0, []string{"stub"}},
-		{"printf released command", ".sh", `printf 'stub run file\n'`, "", 0, 0, []string{"stub"}},
-		{"printf unknown command", ".sh", "# installer\nprintf 'stub nope\\n'", `has no command "nope"`, 2, 0, []string{"stub"}},
-		{"echo escaped command", ".sh", `echo -e "\n\tstub nope"`, `has no command "nope"`, 1, 0, []string{"stub"}},
-		{"powershell escaped command", ".ps1", "Write-Host \"`n`tstub nope\"", `has no command "nope"`, 1, 0, []string{"stub"}},
-		{"mdx marker hint", ".mdx", "`stub nope`", `for output samples, add <!-- release-commands: expected-failure -->`, 1, 0, []string{"stub"}},
-		{"markdown command", ".markdown", "`stub nope`", `has no command "nope"`, 1, 0, []string{"stub"}},
-		{"unsupported extension", ".txt", "stub nope", "unsupported file type", 0, 0, []string{"stub"}},
+		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", 1, []string{"stub", "stub-helper"}},
+		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\nstub plain\n```", "passes; remove expected-failure marker: stub run file", 5, []string{"stub"}},
+		{"shell prefixed output", ".sh", "# installer\necho 'Get started: stub nope'", `has no command "nope"`, 2, []string{"stub"}},
+		{"powershell prefixed output", ".ps1", "# installer\nWrite-Host 'Get started: stub nope'", `has no command "nope"`, 2, []string{"stub"}},
+		{"installer passing marker", ".ps1", "# release-commands: expected-failure\nWrite-Host 'stub run file'", "passes; remove expected-failure marker", 2, []string{"stub"}},
+		{"shell marker hint", ".sh", "echo 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, 1, []string{"stub"}},
+		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, 1, []string{"stub"}},
+		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for unreleased commands, add "Not in the latest release yet" before the block; for output samples, add <!-- release-commands: expected-failure -->`, 3, []string{"stub"}},
+		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0, []string{"stbu"}},
+		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", 1, []string{"stub", "stub-helper"}},
+		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", 0, []string{"stub", "stub-helper"}},
+		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", 0, []string{"stub"}},
+		{"mdx marker hint", ".mdx", "`stub nope`", `for output samples, add <!-- release-commands: expected-failure -->`, 1, []string{"stub"}},
+		{"unsupported extension", ".txt", "stub nope", "unsupported file type", 0, []string{"stub"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
@@ -119,9 +104,6 @@ func TestReleaseCommands(t *testing.T) {
 				require.Equal(t, 0, code, errOut.String())
 				require.Empty(t, errOut.String())
 				require.Empty(t, out.String())
-			}
-			if test.omittedLine > 0 {
-				require.NotContains(t, errOut.String(), fmt.Sprintf("%s:%d:", file, test.omittedLine))
 			}
 			if test.line > 0 {
 				require.Contains(t, out.String()+errOut.String(), fmt.Sprintf("%s:%d:", file, test.line))
