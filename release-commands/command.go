@@ -117,13 +117,15 @@ func punctuation(source string) []int {
 }
 
 func commentIndex(source string) int {
-	positions := punctuation(source)
-	for n, i := range positions {
-		if source[i] == '#' && (i == 0 || n > 0 && positions[n-1] == i-1 && (source[i-1] == ' ' || source[i-1] == '\t')) {
-			return i
+	tree, _ := syntax.NewParser(syntax.KeepComments(true)).Parse(strings.NewReader(source), "")
+	first := len(source)
+	syntax.Walk(tree, func(node syntax.Node) bool {
+		if comment, ok := node.(*syntax.Comment); ok {
+			first = min(first, int(comment.Pos().Offset()))
 		}
-	}
-	return len(source)
+		return true
+	})
+	return first
 }
 
 func synopses(source string) []string {

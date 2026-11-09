@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	if err := writeFixtureArchive(fixture, map[string][]byte{"bin/stub": data}); err != nil {
+	if err := writeFixtureArchive(fixture, map[string][]byte{"stub": data}); err != nil {
 		panic(err)
 	}
 	code := m.Run()
@@ -71,6 +71,9 @@ func TestReleaseCommands(t *testing.T) {
 	}{
 		{"installer prose annotation", ".sh", "# release-commands: prose\necho 'stub installed successfully'\n\necho 'stub run file'", "", "", 0, []string{"stub"}},
 		{"markdown prose", ".md", "Getting started.", "", "", 0, []string{"stub"}},
+		{"nested quoted hash", ".md", "```sh\nstub run \"$(printf \"%s\" \"file #1\")\" --bogus\n```", "unknown flag: --bogus", "", 2, []string{"stub"}},
+		{"uppercase markdown", ".MD", "`stub nope`", `has no command "nope"`, "", 1, []string{"stub"}},
+		{"passing note paragraph command", ".md", "Not in the latest release yet: `stub run file`", "", "passes; remove unreleased note: stub run file", 1, []string{"stub"}},
 		{"installer without commands", ".sh", "echo hello", "example.sh:", "", 0, []string{"stub"}},
 		{"installer parse error names file", ".sh", "echo 'stub nope'\nfoo() { case", "example.sh:2:", "", 2, []string{"stub"}},
 		{"passing marked command", ".md", "<!-- release-commands: expected-failure -->\n\n```sh\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 4, []string{"stub"}},

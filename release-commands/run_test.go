@@ -37,6 +37,8 @@ func TestDescribe(t *testing.T) {
 func TestCheck(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, arguments, finding string }{
+		{"help target after terminator", "help -- group nope", `has no command "nope"`},
+		{"help known target after terminator", "help -- group child", ""},
 		{"help rejects target command flag", "help plain --log.level debug", "unknown flag: --log.level"},
 		{"count flag then command", "-v nope", `has no command "nope"`},
 		{"lowercase symbolic child", "group $child", ""},
@@ -71,6 +73,11 @@ func TestCheck(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDescribeUnsupportedFlags(t *testing.T) {
+	_, err := describe("Usage:\n  stub [flags]\nFlags:\n  --quiet   Quiet output\n")
+	require.ErrorContains(t, err, "unsupported help")
 }
 
 func TestHelpCache(t *testing.T) {

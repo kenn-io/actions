@@ -34,7 +34,7 @@ Run the action in its own job. It installs its own Go version.
 
 Select this job as a required status check for `main`.
 
-Reference the action at `@main`, and pin it with the calling repository's `actions.lock`. Include `actions/setup-go@v7.0.0` in that lockfile because this action calls it. List each file and binary on its own line. The asset glob must match exactly one `.tar.gz`, excluding alternate builds such as `_homebrew_` archives. `repository` defaults to the calling repository. `github-token` defaults to the job token; private releases need a token that can read them.
+Reference the action at `@main`, and pin it with the calling repository's `actions.lock`. Include `actions/setup-go@v7.0.0` in that lockfile because this action calls it. List each file and binary on its own line. The asset glob must match exactly one `.tar.gz`, excluding alternate builds such as `_homebrew_` archives. Binaries must sit at the archive root. `repository` defaults to the calling repository. `github-token` defaults to the job token; private releases need a token that can read them.
 
 A flag named alone or with an empty assignment checks its spelling without validating a value.
 
@@ -79,6 +79,8 @@ Use a command the release supports, publish a release containing it, or add the 
 ## Limits
 
 Raw HTML `<pre>` blocks aren't read. Use Markdown fenced blocks for command examples.
+
+Executable names must match `binaries` exactly. A Windows spelling such as `stub.exe` isn't checked when `binaries` lists `stub`.
 
 The action checks Linux amd64 binaries only. It asks each binary for `help <command path>`, then checks command and visible flag names against the final command's help page, including inherited flags. Hidden flags count as absent. Values only determine which words belong to flags; the checker doesn't validate types, argument counts, data, permissions, or deprecation notices. Successful, parsed help is reused across files within one run for each binary and exact help path. Failed or unparseable help is retried. Each actual help invocation has a fresh temporary home, `PATH=/usr/bin:/bin` as its only other environment variable, and a ten-second limit. The release binary must be trusted.
 

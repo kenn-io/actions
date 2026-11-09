@@ -204,7 +204,7 @@ func visible(node ast.Node, source []byte) string {
 }
 
 func examples(file string, source []byte, binaries []string) ([]exampleBlock, error) {
-	markdown := slices.Contains(markdownExtensions, filepath.Ext(file))
+	markdown := slices.Contains(markdownExtensions, strings.ToLower(filepath.Ext(file)))
 	var result []exampleBlock
 	var current exampleBlock
 	add := func(value string, line int) bool {
@@ -218,7 +218,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		return false
 	}
 	if !markdown {
-		messages, err := installerStrings(source, filepath.Ext(file) == ".ps1")
+		messages, err := installerStrings(source, strings.EqualFold(filepath.Ext(file), ".ps1"))
 		if err != nil {
 			return nil, fmt.Errorf("%s:%w", file, err)
 		}
@@ -275,6 +275,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		var blocks []exampleBlock
 		pending := ""
 		for child := parent.FirstChild(); child != nil; child = child.NextSibling() {
+			before := len(blocks)
 			if html, ok := child.(*ast.HTMLBlock); ok && strings.Contains(html.Value.Str(source), "<!-- release-commands: expected-failure -->") {
 				pending = "expected-failure marker"
 				continue
@@ -283,9 +284,9 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 			if child.Kind() == ast.KindBlockquote && child.FirstChild() == child.LastChild() && child.FirstChild() != nil {
 				markerNode = child.FirstChild()
 			}
-			if markerNode.Kind() == ast.KindParagraph && strings.HasPrefix(visible(markerNode, source), note) {
+			noteParagraph := markerNode.Kind() == ast.KindParagraph && strings.HasPrefix(visible(markerNode, source), note)
+			if noteParagraph {
 				pending = "unreleased note"
-				continue
 			}
 			marker := cmp.Or(inherited, pending)
 			switch child.(type) {
@@ -362,7 +363,9 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 					blocks = append(blocks, current)
 				}
 			}
-			pending = ""
+			if !noteParagraph || len(blocks) > before {
+				pending = ""
+			}
 		}
 		return blocks
 	}
