@@ -19,6 +19,7 @@ var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w-]+)(?:[ =](\S+)
 
 type usage struct {
 	path      []string
+	aliases   []string
 	arguments bool
 	flags     *pflag.FlagSet
 }
@@ -80,6 +81,12 @@ func describe(output string) (usage, error) {
 		hasChildren = hasChildren || child
 	}
 	u.arguments = u.arguments || !hasChildren
+	if _, rest, ok := strings.Cut(output, "\nAliases:\n"); ok {
+		line, _, _ := strings.Cut(rest, "\n")
+		for alias := range strings.SplitSeq(line, ",") {
+			u.aliases = append(u.aliases, strings.TrimSpace(alias))
+		}
+	}
 	inFlags := false
 	for line := range strings.SplitSeq(output, "\n") {
 		if line == "Flags:" || line == "Global Flags:" {
@@ -158,10 +165,10 @@ func check(ctx context.Context, binary string, args []string) error {
 			continue
 		}
 		child, err := help(ctx, binary, append(slices.Clone(current.path[1:]), word))
-		if err != nil && len(child.path) > len(current.path) {
-			return err
-		}
-		if err == nil && len(child.path) > len(current.path) {
+		if n := len(current.path); len(child.path) == n+1 && slices.Equal(child.path[:n], current.path) && (child.path[n] == word || slices.Contains(child.aliases, word)) {
+			if err != nil {
+				return err
+			}
 			current = child
 			continue
 		}

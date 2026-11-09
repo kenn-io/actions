@@ -8,7 +8,7 @@ Check README, docs, and installer examples against the latest published GitHub r
 name: Released commands
 on:
   pull_request:
-    paths: [README.md, scripts/install.sh, scripts/install.ps1]
+    paths: [README.md, scripts/install.sh]
   release:
     types: [published]
 permissions:
@@ -25,7 +25,6 @@ jobs:
           files: |
             README.md
             scripts/install.sh
-            scripts/install.ps1
           binaries: kata
           asset: kata_*[0-9]_linux_amd64.tar.gz
 ```
@@ -36,9 +35,9 @@ A flag named alone or with an empty assignment checks its spelling without valid
 
 ## Examples it reads
 
-In `.md` files, the checker reads fenced blocks, inline code, and tables containing a listed binary. A `$ ` prompt and `VAR=value` prefixes are allowed. Backslash continuations and indented optional synopsis lines join the preceding command. Shell comments end a command. Spaced pipes, `&&`, and `;` preserve each invocation of a listed binary. Quoted arguments stay together. Synopses such as `kata issue get|show <id> [--limit <n>]` check both spellings and the optional flag. Unspaced `a|b` words are alternatives. Unquoted `<…>` placeholders become a fixed word for parsing; generic `<command>`, `<subcommand>`, and ellipses are omitted.
+In `.md` files, the checker reads fenced blocks and inline code, including code spans in table cells. A `$ ` prompt and `VAR=value` prefixes are allowed. Backslash continuations and indented optional synopsis lines join the preceding command. Shell comments end a command. Spaced pipes, `&&`, and `;` preserve each invocation of a listed binary. Quoted arguments stay together. Synopses such as `kata issue get|show <id> [--limit <n>]` check both spellings and the optional flag. Unspaced `a|b` words are alternatives. Unquoted `<…>` placeholders become a fixed word for parsing; generic `<command>`, `<subcommand>`, and ellipses are omitted.
 
-Installer examples are messages printed by `echo`, `printf`, PowerShell output commands, or functions in the script that wrap them. They begin with a listed binary or introduce it after a colon, such as `echo "Get started: kata issue list"`. Shell `echo` arguments are joined, helpers substitute their positional arguments, and `printf` formatting is expanded. `Write-Host` arguments and array items are joined with its `-Separator`, a space by default; for other output commands each argument and array item is a separate message. Messages whose text doesn't parse as a shell command are treated as prose. PowerShell files require `pwsh` on `PATH`, as provided by GitHub's Ubuntu runners; the checker uses its syntax parser without executing the installer. Installer syntax or message-expansion errors fail the file with `cannot read installer messages`.
+Installer examples are messages printed by shell `echo`, `printf`, or functions in the script that wrap them. They begin with a listed binary or introduce it after a colon, such as `echo "Get started: kata issue list"`. Shell `echo` arguments are joined, helpers substitute their positional arguments, and `printf` formatting is expanded. Messages whose text doesn't parse as a shell command are treated as prose. Installer syntax or message-expansion errors fail the file with `cannot read installer messages`.
 
 ## Mark unreleased commands
 
@@ -64,7 +63,7 @@ kata unknown-command
 ```
 ````
 
-Installer comments use `# Not in the latest release yet` or `# release-commands: expected-failure`. A comment covers adjacent printer statements until a blank source line or a statement that doesn't print a message. The check reports the same removal notice when every command in that block passes. Use the expected-failure comment for prose that starts with a binary name.
+Installer comments use `# Not in the latest release yet` or `# release-commands: expected-failure`. A comment covers the messages printed from the lines below it, up to the next blank source line. The check reports the same removal notice when every command in that block passes. Use the expected-failure comment for prose that starts with a binary name.
 
 ## Fix a finding
 
@@ -74,7 +73,7 @@ A finding looks like `README.md:42: kata future-command: v1.0.0 has no command "
 
 The action checks Linux amd64 binaries only. It asks each binary for `help <command path>`, then checks command and visible flag names against the final command's help page, including inherited flags. Hidden flags count as absent. Values only determine which words belong to flags; the checker doesn't validate types, argument counts, data, permissions, or deprecation notices. Each help invocation has a fresh temporary home, a restricted environment, and a ten-second limit. The release binary must be trusted.
 
-Command discovery reads Cobra's `Usage:` section and flag rows, including inherited flags and kata's comma-separated `Global:` line. Unrecognized flag rows produce an `unsupported help` error. A command can accept positional arguments and also offer child commands. A group whose usage only shows `[flags]` and `[command]` rejects an unknown child. Commands with a different help format need a separate check. Files must be listed explicitly; the action doesn't crawl links or infer which pages a site publishes. Installer parsing reads messages without evaluating shell or PowerShell scripts. Shell variables outside printer helpers remain symbolic; other variables inside helpers are omitted. Command substitutions receive a placeholder. PowerShell printer helpers bind literal positional and named arguments from either parameter declaration form, then read printed variables, static interpolation, arrays, and string concatenation. Uncalled helpers and unused arguments supply no examples. Commands behind `sudo`, `./`, or other wrappers aren't checked. The checker is built once and runs from the workspace, so findings use the relative paths supplied in `files`.
+Command discovery reads Cobra's `Usage:` section and flag rows, including inherited flags and kata's comma-separated `Global:` line. Unrecognized flag rows produce an `unsupported help` error. A command can accept positional arguments and also offer child commands. A group whose usage only shows `[flags]` and `[command]` rejects an unknown child. Commands with a different help format need a separate check. Files must be listed explicitly; the action doesn't crawl links or infer which pages a site publishes. Installer parsing reads shell messages without evaluating scripts. `.ps1` installers fail as unsupported. Shell variables outside printer helpers remain symbolic; other variables inside helpers are omitted. Command substitutions receive a placeholder. Uncalled helpers and unused arguments supply no examples. Commands behind `sudo`, `./`, or other wrappers aren't checked. The checker is built once and runs from the workspace, so findings use the relative paths supplied in `files`.
 
 ## Run locally
 

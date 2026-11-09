@@ -96,6 +96,15 @@ func punctuation(source string) []int {
 	return positions
 }
 
+func comment(source string) bool {
+	for _, i := range punctuation(source) {
+		if source[i] == '#' && (i == 0 || source[i-1] == ' ' || source[i-1] == '\t') {
+			return true
+		}
+	}
+	return false
+}
+
 func synopses(source string) []string {
 	plain := []byte(source)
 	for _, i := range punctuation(source) {

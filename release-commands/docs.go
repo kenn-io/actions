@@ -3,16 +3,11 @@ package main
 import (
 	"bytes"
 	"cmp"
-	"context"
-	_ "embed"
-	"encoding/json/v2"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
@@ -31,33 +26,9 @@ type exampleBlock struct {
 	marker   string
 }
 
-//go:embed installer.ps1
-var powershellParser string
-
 type installerMessage struct {
-	Text      string `json:"text"`
-	Line      int    `json:"line"`
-	Statement int    `json:"statement"`
-	End       int    `json:"end"`
-	Comment   string `json:"comment"`
-}
-
-func installerStrings(source string) ([]installerMessage, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "pwsh", "-NoProfile", "-NonInteractive", "-Command", powershellParser)
-	cmd.Stdin = strings.NewReader(source)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	data, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("PowerShell parser: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	var messages []installerMessage
-	if err := json.Unmarshal(data, &messages); err != nil {
-		return nil, err
-	}
-	return messages, nil
+	Text string
+	Line int
 }
 
 const note = "Not in the latest release yet"
@@ -88,19 +59,8 @@ func (env shellEnv) Get(name string) expand.Variable {
 
 func (shellEnv) Each(func(string, expand.Variable) bool) {}
 
-// leading returns the whole source lines between stmt and the code before it, or the earlier
-// output end after, so comments, blank lines, and silent statements read like a top-level gap.
-func leading(source []byte, after int, stmt *syntax.Stmt) string {
-	start := stmt.Pos().Offset()
-	if len(stmt.Comments) > 0 {
-		start = min(start, stmt.Comments[0].Pos().Offset())
-	}
-	_, lines, _ := strings.Cut(string(source[min(after, len(bytes.TrimRight(source[:start], " \t\r\n"))):stmt.Pos().Offset()]), "\n")
-	return lines
-}
-
 func shellStrings(source []byte) ([]installerMessage, error) {
-	tree, err := syntax.NewParser(syntax.KeepComments(true)).Parse(bytes.NewReader(source), "")
+	tree, err := syntax.NewParser().Parse(bytes.NewReader(source), "")
 	if err != nil {
 		return nil, err
 	}
@@ -111,42 +71,31 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 		}
 		return true
 	})
-	messages, comment, open, emits := []installerMessage{}, "", false, 0
-	// Escapes expanded by echo or printf split lines in place; a physical newline, carried
-	// as NUL, also moves to the next source line. Unterminated output stays open to continue.
-	emit := func(value string, line int, outer *syntax.CallExpr) {
-		for index, text := range strings.Split(value, "\n") {
-			message := installerMessage{strings.ReplaceAll(text, "\x00", "\n"), line, int(outer.Pos().Offset()), int(outer.End().Offset()), comment}
-			line, comment, emits = line+strings.Count(text, "\x00"), "", emits+min(len(value), 1)
-			if last := len(messages) - 1; index == 0 && open {
-				messages[last].Text, messages[last].End = messages[last].Text+message.Text, message.End
-			} else if open = text != ""; open || index < strings.Count(value, "\n") {
-				messages = append(messages, message)
+	var messages []installerMessage
+	// Escaped output newlines split messages; NULs mark physical source newlines.
+	emit := func(value string, line int) {
+		for text := range strings.SplitSeq(value, "\n") {
+			if text != "" {
+				messages = append(messages, installerMessage{strings.ReplaceAll(text, "\x00", "\n"), line})
 			}
+			line += strings.Count(text, "\x00")
 		}
 	}
-	var printCall func(*syntax.CallExpr, shellEnv, int, *syntax.CallExpr) error
-	// Helper output keeps its outer call's statement and the comments above each call reaching its printer.
-	walk := func(root syntax.Node, env shellEnv, depth int, outer *syntax.CallExpr, inherited string) (failure error) {
-		after, count := len(source), emits
+	var printCall func(*syntax.CallExpr, shellEnv, int) error
+	walk := func(root syntax.Node, env shellEnv, depth int) error {
+		var failure error
 		syntax.Walk(root, func(node syntax.Node) bool {
 			switch node := node.(type) {
 			case *syntax.FuncDecl, *syntax.CmdSubst:
 				return false
-			case *syntax.Stmt:
-				if comment, inherited = inherited, ""; depth > 0 {
-					comment += leading(source, after, node)
-				}
 			case *syntax.CallExpr:
-				if failure = cmp.Or(failure, printCall(node, env, depth, cmp.Or(outer, node))); count < emits {
-					after, count = int(node.End().Offset()), emits
-				}
+				failure = printCall(node, env, depth)
 			}
 			return failure == nil
 		})
 		return failure
 	}
-	printCall = func(call *syntax.CallExpr, env shellEnv, depth int, outer *syntax.CallExpr) error {
+	printCall = func(call *syntax.CallExpr, env shellEnv, depth int) error {
 		if len(call.Args) == 0 {
 			return nil
 		}
@@ -176,7 +125,7 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 			}
 		}
 		if function != nil {
-			return walk(function.Body.Cmd, shellEnv{args, true}, depth+1, outer, comment)
+			return walk(function.Body.Cmd, shellEnv{args, true}, depth+1)
 		}
 		for name == "echo" && len(args) > 0 && len(args[0].text) > 1 && strings.TrimRight(args[0].text, "neE") == "-" {
 			flags, args, values = flags+args[0].text, args[1:], values[1:]
@@ -193,7 +142,7 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 			if strings.HasSuffix(strings.TrimRight(flags, "-n"), "e") {
 				value, _, err = expand.Format(&config, "%b", []string{value})
 			}
-			emit(value, append(args, example{line: int(call.Pos().Line())})[0].line, outer)
+			emit(value, append(args, example{line: int(call.Pos().Line())})[0].line)
 			return err
 		}
 		if values[0] == "--" && len(values) > 1 {
@@ -208,14 +157,14 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 			if used > 0 {
 				line = args[0].line
 			}
-			emit(value, line, outer)
+			emit(value, line)
 			values, args = values[used:], args[used:]
 			if used == 0 || len(values) == 0 {
 				return nil
 			}
 		}
 	}
-	err = walk(tree, shellEnv{}, 0, nil, "")
+	err = walk(tree, shellEnv{}, 0)
 	return messages, err
 }
 
@@ -251,51 +200,54 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 	}
 	if filepath.Ext(file) != ".md" {
-		var messages []installerMessage
-		var failure error
 		if filepath.Ext(file) == ".ps1" {
-			messages, failure = installerStrings(string(source))
-		} else {
-			messages, failure = shellStrings(source)
+			return nil, fmt.Errorf("%s: cannot read installer messages: PowerShell installers aren't supported", file)
 		}
-		if failure != nil {
-			return nil, fmt.Errorf("%s: cannot read installer messages: %w", file, failure)
+		messages, err := shellStrings(source)
+		if err != nil {
+			return nil, fmt.Errorf("%s: cannot read installer messages: %w", file, err)
 		}
-		flush := func(marker string) {
+		sourceLines := strings.Split(string(source), "\n")
+		markerFor := func(line int) (string, int) {
+			for line > 1 && line-1 <= len(sourceLines) {
+				previous := strings.TrimSpace(sourceLines[line-2])
+				if previous == "" {
+					break
+				}
+				if strings.HasPrefix(previous, "#") {
+					switch {
+					case strings.Contains(previous, note):
+						return "unreleased note", line - 1
+					case strings.Contains(previous, "release-commands: expected-failure"):
+						return "expected-failure marker", line - 1
+					}
+				}
+				line--
+			}
+			return "", 0
+		}
+		flush := func() {
 			if len(current.commands) > 0 {
 				result = append(result, current)
 			}
-			current = exampleBlock{marker: marker}
+			current = exampleBlock{}
 		}
-		position := 0
+		blockLine := -1
 		for _, message := range messages {
-			// Empty output is a blank line, which ends a marker block.
-			if message.Text == "" {
-				flush("")
-				continue
-			}
-			if message.Statement >= position || message.Comment != "" {
-				gap := strings.Split(cmp.Or(string(source[min(position, message.Statement):message.Statement]), "\n")+message.Comment, "\n")
-				for index, line := range gap {
-					line = strings.Trim(line, " \t\r;&|")
-					switch {
-					case strings.HasPrefix(line, "#") && strings.Contains(line, note):
-						flush("unreleased note")
-					case strings.HasPrefix(line, "#") && strings.Contains(line, "release-commands: expected-failure"):
-						flush("expected-failure marker")
-					case line == "" && index > 0 && index < len(gap)-1, line != "" && !strings.HasPrefix(line, "#"):
-						flush("")
-					}
-				}
-			}
-			position = max(position, message.End)
 			for offset, value := range strings.Split(termtext.StripANSI(message.Text), "\n") {
+				line := message.Line + offset
+				marker, key := markerFor(line)
+				if key != blockLine {
+					flush()
+					current.marker = marker
+					blockLine = key
+				}
 				for found := true; found; _, value, found = strings.Cut(value, ":") {
-					add(value, message.Line+offset)
+					add(value, line)
 				}
 			}
 		}
-		flush("")
+		flush()
 		return result, nil
 	}
 	root := parser.New(parser.WithExtensions(extension.NewTableParser())).Parse(source)
@@ -347,7 +299,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 								start = bytes.Count(source[:segment.Start], []byte{'\n'}) + 1
 							}
 							pending += strings.TrimSpace(value)
-							if (len(pending)-len(strings.TrimRight(pending, "\\")))%2 == 1 {
+							if !comment(pending) && (len(pending)-len(strings.TrimRight(pending, "\\")))%2 == 1 {
 								pending = strings.TrimSuffix(pending, "\\") + " "
 								continue
 							}

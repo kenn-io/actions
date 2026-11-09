@@ -35,6 +35,7 @@ func TestCheck(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, arguments, finding string }{
 		{"disabled flag parsing", "unsafe file --help=false", ""},
+		{"group positional arguments", "named alice extra", ""},
 		{"absent child", "group absent", `has no command "absent"`},
 		{"unknown flag", "run file --bogus", "unknown flag: --bogus"},
 		{"child flag before child", "group --limit 50 child ID", ""},
@@ -46,6 +47,7 @@ func TestCheck(t *testing.T) {
 		{"inherited flag", "--config cfg group child ID", ""},
 		{"leaf arguments", "plain somefile", ""},
 		{"group argument synopsis", "named child", ""},
+		{"alias", "group alias ID", ""},
 		{"long assignment", "group --limit=anything child ID", ""},
 		{"short attached value", "group -n50 child ID", ""},
 		{"terminator", "group -- --bogus nope", ""},

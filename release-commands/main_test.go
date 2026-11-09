@@ -70,6 +70,7 @@ func TestReleaseCommands(t *testing.T) {
 		binaries                    []string
 	}{
 		{"markdown command substitution", ".md", "```sh\nTOKEN=$(stub nope)\n```", `has no command "nope"`, 2, []string{"stub"}},
+		{"powershell installer", ".ps1", "Write-Host 'stub nope'", "PowerShell installers aren't supported", 0, []string{"stub"}},
 		{"markdown parse escape", ".md", "`stub started (pid 12)`", "add <!-- release-commands: expected-failure -->", 1, []string{"stub"}},
 		{"installer passing marker", ".sh", "# release-commands: expected-failure\necho 'stub run file'", "passes; remove expected-failure marker", 2, []string{"stub"}},
 		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"`, 3, []string{"stub"}},
