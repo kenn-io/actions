@@ -73,6 +73,14 @@ func TestReleaseCommands(t *testing.T) {
 		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", 1, 0, []string{"stub", "stub-helper"}},
 		{"marked output only", ".md", "<!-- release-commands: expected-failure -->\n\n`stub started (pid 12)`", "", 0, 0, []string{"stub"}},
 		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\nstub plain\n```", "passes; remove expected-failure marker: stub run file", 5, 0, []string{"stub"}},
+		{"shell prefixed output", ".sh", "# installer\necho 'Get started: stub nope'", `has no command "nope"`, 2, 0, []string{"stub"}},
+		{"powershell prefixed output", ".ps1", "# installer\nWrite-Host 'Get started: stub nope'", `has no command "nope"`, 2, 0, []string{"stub"}},
+		{"installer known command", ".sh", "echo 'stub run file'", "", 0, 0, []string{"stub"}},
+		{"installer unsafe command", ".sh", "echo 'stub unsafe file --help=false'", "", 0, 0, []string{"stub"}},
+		{"installer unknown flag", ".sh", "echo 'stub run file --bogus'", "unknown flag: --bogus", 1, 0, []string{"stub"}},
+		{"installer absent child", ".ps1", "Write-Host 'stub group absent'", `has no command "absent"`, 1, 0, []string{"stub"}},
+		{"installer unreleased", ".sh", "# Not in the latest release yet\necho 'stub nope'", "", 0, 0, []string{"stub"}},
+		{"installer passing marker", ".ps1", "# release-commands: expected-failure\nWrite-Host 'stub run file'", "passes; remove expected-failure marker", 2, 0, []string{"stub"}},
 		{"shell marker hint", ".sh", "echo 'stub nope'", "add # release-commands: expected-failure", 1, 0, []string{"stub"}},
 		{"powershell marker hint", ".ps1", "Write-Host 'stub nope'", "add # release-commands: expected-failure", 1, 0, []string{"stub"}},
 		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, 1, 0, []string{"stub"}},
@@ -86,7 +94,6 @@ func TestReleaseCommands(t *testing.T) {
 		{"passing marker", ".md", "Not in the latest release yet\n\n`stub run file`", "passes; remove unreleased note", 3, 0, []string{"stub"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			requirePowerShell(t, test.ext)
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
 			require.NoError(t, os.WriteFile(file, []byte(test.content), 0o600))
 			var out, errOut bytes.Buffer

@@ -136,10 +136,19 @@ func synopses(source string) []string {
 		}
 		// A spaced bar separates alternatives only inside optional brackets; elsewhere it is a pipeline.
 		spaced := strings.ContainsAny(source[i-1:i+2], " \t")
-		keep := func(c rune) bool {
-			return !strings.ContainsRune("[]", c) && (spaced || !unicode.IsSpace(c) && !strings.ContainsRune(";&|", c))
+		start, end := 0, len(source)
+		for _, boundary := range punctuation(source) {
+			c := rune(source[boundary])
+			if !strings.ContainsRune("[]", c) && (spaced || !unicode.IsSpace(c) && !strings.ContainsRune(";&|", c)) {
+				continue
+			}
+			if boundary < i {
+				start = boundary + 1
+			} else if boundary > i {
+				end = boundary
+				break
+			}
 		}
-		start, end := len(strings.TrimRightFunc(source[:i], keep)), len(source)-len(strings.TrimLeftFunc(source[i+1:], keep))
 		if !spaced || start > 0 && source[start-1] == '[' && end < len(source) && source[end] == ']' {
 			return append(synopses(source[:i]+source[end:]), synopses(source[:start]+source[i+1:])...)
 		}
@@ -148,5 +157,5 @@ func synopses(source string) []string {
 }
 
 func placeholder(word string) bool {
-	return !strings.HasPrefix(word, "-") && (strings.HasPrefix(word, "<") || strings.HasPrefix(word, "{") || (strings.ToUpper(word) == word && strings.ContainsAny(word, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")))
+	return !strings.HasPrefix(word, "-") && (strings.HasPrefix(word, "$") || strings.HasPrefix(word, "<") || strings.HasPrefix(word, "{") || (strings.ToUpper(word) == word && strings.ContainsAny(word, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")))
 }

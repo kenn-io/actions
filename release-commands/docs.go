@@ -3,22 +3,16 @@ package main
 import (
 	"bytes"
 	"cmp"
-	"context"
-	_ "embed"
-	"encoding/json/v2"
 	"fmt"
-	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
 	"go.kenn.io/kit/tui/termtext"
-	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -36,178 +30,155 @@ type installerMessage struct {
 	Line int
 }
 
-//go:embed installer.ps1
-var powershellReader string
-
-func powershellStrings(source []byte) ([]installerMessage, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "pwsh", "-NoProfile", "-NonInteractive", "-Command", powershellReader)
-	cmd.Stdin = bytes.NewReader(source)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	data, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("PowerShell parser: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	var messages []installerMessage
-	return messages, json.Unmarshal(data, &messages)
-}
-
 const note = "Not in the latest release yet"
 
-// shellEnv gives a printer helper its caller's arguments. Other variables
-// inside a helper, such as colors, print nothing; outside one they stay visible.
-type shellEnv struct {
-	args   []example
-	helper bool
-}
-
-func (env shellEnv) Get(name string) expand.Variable {
-	values := make([]string, len(env.args))
-	for i, arg := range env.args {
-		values[i] = arg.text
-	}
-	if index, err := strconv.Atoi(name); env.helper && err == nil && index > 0 && index <= len(values) {
-		return expand.Variable{Set: true, Kind: expand.String, Str: values[index-1]}
-	}
-	if env.helper && (name == "@" || name == "*") {
-		return expand.Variable{Set: true, Kind: expand.Indexed, List: values}
-	}
-	if env.helper || name == "IFS" {
-		return expand.Variable{}
-	}
-	return expand.Variable{Set: true, Kind: expand.String, Str: "$" + name}
-}
-
-func (shellEnv) Each(func(string, expand.Variable) bool) {}
-
+// Installer readers collect quoted arguments at output calls without evaluating scripts.
 func shellStrings(source []byte) ([]installerMessage, error) {
 	tree, err := syntax.NewParser().Parse(bytes.NewReader(source), "")
 	if err != nil {
 		return nil, err
 	}
-	functions := map[string]*syntax.FuncDecl{}
+	printers := map[string]bool{"echo": true, "printf": true}
 	syntax.Walk(tree, func(node syntax.Node) bool {
 		if function, ok := node.(*syntax.FuncDecl); ok {
-			functions[function.Name.Value] = function
+			syntax.Walk(function.Body, func(node syntax.Node) bool {
+				if call, ok := node.(*syntax.CallExpr); ok && len(call.Args) > 0 && printers[call.Args[0].Lit()] {
+					printers[function.Name.Value] = true
+				}
+				return true
+			})
+			return false
 		}
 		return true
 	})
 	var messages []installerMessage
-	var pending installerMessage
-	flush := func() {
-		if pending.Text != "" {
-			pending.Text = strings.ReplaceAll(pending.Text, "\x00", "\n")
-			messages = append(messages, pending)
+	syntax.Walk(tree, func(node syntax.Node) bool {
+		if _, ok := node.(*syntax.CmdSubst); ok {
+			return false
 		}
-		pending = installerMessage{}
-	}
-	// Escaped output newlines split messages; NULs mark physical source newlines.
-	emit := func(value string, line int) {
-		for {
-			text, rest, newline := strings.Cut(value, "\n")
-			if pending.Text == "" {
-				pending.Line = line
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) == 0 || !printers[call.Args[0].Lit()] {
+			return true
+		}
+		if call.Args[0].Lit() == "printf" && len(call.Args) > 1 && call.Args[1].Lit() == "-v" {
+			return false
+		}
+		for _, word := range call.Args[1:] {
+			if len(word.Parts) != 1 {
+				continue
 			}
-			pending.Text += text
-			line += strings.Count(text, "\x00")
-			if !newline {
+			switch part := word.Parts[0].(type) {
+			case *syntax.SglQuoted:
+				messages = append(messages, installerMessage{part.Value, int(part.Pos().Line())})
+			case *syntax.DblQuoted:
+				text := string(source[part.Pos().Offset()+1 : part.End().Offset()-1])
+				if !strings.Contains(text, "$(") && !strings.Contains(text, "`") {
+					messages = append(messages, installerMessage{text, int(part.Pos().Line())})
+				}
+			}
+		}
+		return false
+	})
+	return messages, nil
+}
+
+var (
+	powershellFunction = regexp.MustCompile(`(?is)\bfunction\s+([\w-]+)[^{]*\{[^}]*\bWrite-[\w-]+[^}]*\}`)
+	powershellCall     = regexp.MustCompile(`^\s*([\w-]+)\s+`)
+	colorPrefix        = regexp.MustCompile(`^\s*\$(?:\{[\w]+\}|[\w]+)`)
+)
+
+func powershellStrings(source []byte) ([]installerMessage, error) {
+	// Remove comments while preserving positions and quoted strings.
+	clean := append([]byte(nil), source...)
+	codeLines := []bool{true}
+	var quote byte
+	block := false
+	for i := 0; i < len(clean); i++ {
+		if clean[i] == '\n' {
+			codeLines = append(codeLines, quote == 0 && !block)
+		}
+		if block {
+			if i+1 < len(clean) && clean[i] == '#' && clean[i+1] == '>' {
+				clean[i], clean[i+1], block = ' ', ' ', false
+				i++
+			} else if clean[i] != '\n' {
+				clean[i] = ' '
+			}
+			continue
+		}
+		if quote != 0 {
+			if clean[i] == '`' && quote == '"' {
+				if i+1 < len(clean) && clean[i+1] == '\n' {
+					codeLines = append(codeLines, false)
+				}
+				i++
+			} else if clean[i] == quote {
+				if i+1 < len(clean) && clean[i+1] == quote {
+					i++
+				} else {
+					quote = 0
+				}
+			}
+			continue
+		}
+		switch clean[i] {
+		case '\'', '"':
+			quote = clean[i]
+		case '<':
+			if i+1 < len(clean) && clean[i+1] == '#' {
+				clean[i], clean[i+1], block = ' ', ' ', true
+				i++
+			}
+		case '#':
+			for i < len(clean) && clean[i] != '\n' {
+				clean[i] = ' '
+				i++
+			}
+			if i < len(clean) {
+				codeLines = append(codeLines, true)
+			}
+		}
+	}
+	lines := strings.Split(string(clean), "\n")
+	printers := map[string]bool{}
+	for _, match := range powershellFunction.FindAllStringSubmatch(string(clean), -1) {
+		printers[strings.ToLower(match[1])] = true
+	}
+	var messages []installerMessage
+	for line, text := range lines {
+		if !codeLines[line] {
+			continue
+		}
+		call := powershellCall.FindStringSubmatchIndex(text)
+		if call == nil {
+			continue
+		}
+		name := strings.ToLower(text[call[2]:call[3]])
+		if !strings.HasPrefix(name, "write-") && !printers[name] {
+			continue
+		}
+		for i := call[1]; i < len(text); i++ {
+			if text[i] == ';' || text[i] == '(' {
 				break
 			}
-			flush()
-			value = rest
-		}
-	}
-	var printCall func(*syntax.CallExpr, shellEnv, int) error
-	walk := func(root syntax.Node, env shellEnv, depth int) error {
-		var failure error
-		syntax.Walk(root, func(node syntax.Node) bool {
-			switch node := node.(type) {
-			case *syntax.FuncDecl, *syntax.CmdSubst:
-				return false
-			case *syntax.CallExpr:
-				failure = printCall(node, env, depth)
+			if text[i] != '\'' && text[i] != '"' {
+				continue
 			}
-			return failure == nil
-		})
-		return failure
-	}
-	printCall = func(call *syntax.CallExpr, env shellEnv, depth int) error {
-		if len(call.Args) == 0 {
-			return nil
-		}
-		name := call.Args[0].Lit()
-		function := functions[name]
-		if name != "echo" && name != "printf" && function == nil {
-			return nil
-		}
-		if depth > len(functions) {
-			return fmt.Errorf("recursive printer helper %s", name)
-		}
-		config := *shellExpansion
-		config.Env = env
-		args, values, flags := []example{}, []string{}, ""
-		for _, word := range call.Args[1:] {
-			fields, err := expand.Fields(&config, word)
-			if err != nil {
-				return err
-			}
-			for _, value := range fields {
-				line := int(word.Pos().Line())
-				if caller := slices.IndexFunc(env.args, func(arg example) bool { return arg.text != "" && strings.Contains(value, arg.text) }); caller >= 0 {
-					line = env.args[caller].line
+			quote, start := text[i], i+1
+			i++
+			for i < len(text) && text[i] != quote {
+				if text[i] == '`' && quote == '"' {
+					i++
 				}
-				args = append(args, example{strings.ReplaceAll(value, "\n", "\x00"), line})
-				values = append(values, args[len(args)-1].text)
+				i++
 			}
-		}
-		if function != nil {
-			return walk(function.Body.Cmd, shellEnv{args, true}, depth+1)
-		}
-		for name == "echo" && len(args) > 0 && len(args[0].text) > 1 && strings.TrimRight(args[0].text, "neE") == "-" {
-			flags, args, values = flags+args[0].text, args[1:], values[1:]
-		}
-		if len(args) == 0 && name != "echo" {
-			return nil
-		}
-		if name == "echo" {
-			value := strings.Join(values, " ")
-			if !strings.Contains(flags, "n") {
-				value += "\n"
-			}
-			// The last of -e and -E wins.
-			if strings.HasSuffix(strings.TrimRight(flags, "-n"), "e") {
-				value, _, err = expand.Format(&config, "%b", []string{value})
-			}
-			emit(value, append(args, example{line: int(call.Pos().Line())})[0].line)
-			return err
-		}
-		if values[0] == "-v" {
-			return nil
-		}
-		if values[0] == "--" && len(values) > 1 {
-			values, args = values[1:], args[1:]
-		}
-		format, line, values, args := values[0], args[0].line, values[1:], args[1:]
-		for {
-			value, used, err := expand.Format(&config, format, values)
-			if err != nil {
-				return err
-			}
-			if used > 0 {
-				line = args[0].line
-			}
-			emit(value, line)
-			values, args = values[used:], args[used:]
-			if used == 0 || len(values) == 0 {
-				return nil
+			if i < len(text) && !strings.Contains(text[start:i], "$(") {
+				messages = append(messages, installerMessage{text[start:i], line + 1})
 			}
 		}
 	}
-	err = walk(tree, shellEnv{}, 0)
-	flush()
-	return messages, err
+	return messages, nil
 }
 
 // visible returns the text a reader sees in node, so emphasis around the note still counts.
@@ -274,7 +245,11 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		blockLine := -1
 		for _, message := range messages {
-			for offset, value := range strings.Split(termtext.StripANSI(message.Text), "\n") {
+			text := message.Text
+			for colorPrefix.MatchString(text) {
+				text = colorPrefix.ReplaceAllString(text, "")
+			}
+			for offset, value := range strings.Split(termtext.StripANSI(text), "\n") {
 				line := message.Line
 				if filepath.Ext(file) != ".ps1" {
 					line += offset
