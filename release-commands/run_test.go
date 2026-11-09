@@ -46,6 +46,7 @@ func TestCheck(t *testing.T) {
 		{"parent flag", "group --local child ID", "unknown flag: --local"},
 		{"inherited flag", "--config cfg group child ID", ""},
 		{"leaf arguments", "plain somefile", ""},
+		{"dotted flag", "plain --log.level debug", ""},
 		{"group argument synopsis", "named child", ""},
 		{"alias", "group alias ID", ""},
 		{"long assignment", "group --limit=anything child ID", ""},

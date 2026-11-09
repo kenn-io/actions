@@ -18,7 +18,9 @@ func main() {
 	named := &cobra.Command{Use: "named name", Run: func(cmd *cobra.Command, _ []string) { _ = cmd.Help() }}
 	named.AddCommand(&cobra.Command{Use: "child", Run: func(*cobra.Command, []string) { panic("must only ask for help") }})
 	root.AddCommand(named)
-	root.AddCommand(&cobra.Command{Use: "plain", Run: func(*cobra.Command, []string) { panic("must only ask for help") }})
+	plain := &cobra.Command{Use: "plain", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}
+	plain.Flags().String("log.level", "info", "Log level")
+	root.AddCommand(plain)
 	root.AddCommand(group, &cobra.Command{Use: "run <path>", Short: "Read a path", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}, &cobra.Command{Use: "unsafe <path>", DisableFlagParsing: true, Short: "Must never execute", Run: func(*cobra.Command, []string) { panic("disabled flag parsing command executed") }})
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
