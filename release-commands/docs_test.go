@@ -63,6 +63,25 @@ func TestExamples(t *testing.T) {
 	}
 }
 
+func TestExamplesSubstitutions(t *testing.T) {
+	for _, test := range []struct {
+		name, source, binary string
+		invocation           []string
+	}{
+		{"command", "kata export --output backups/kata-$(date -u +%Y%m%d).jsonl", "kata", []string{"kata", "export", "--output", "backups/kata-$.jsonl"}},
+		{"process", "source <(msgvault completion bash)", "msgvault", []string{"msgvault", "completion", "bash"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			blocks, err := examples("example.md", []byte("```sh\n"+test.source+"\n```"), []string{test.binary})
+			require.NoError(t, err)
+			require.Len(t, blocks, 1)
+			require.Len(t, blocks[0].commands, 1)
+			require.Equal(t, test.source, blocks[0].commands[0].text)
+			require.Contains(t, blocks[0].commands[0].invocations, test.invocation)
+		})
+	}
+}
+
 func TestExampleParseError(t *testing.T) {
 	_, err := examples("example.sh", []byte("echo 'stub nope'\nfoo() { case"), []string{"stub"})
 	require.ErrorContains(t, err, "example.sh:2:")
