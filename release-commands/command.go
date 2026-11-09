@@ -112,8 +112,9 @@ func punctuation(source string) []int {
 }
 
 func commentIndex(source string) int {
-	for _, i := range punctuation(source) {
-		if source[i] == '#' && (i == 0 || source[i-1] == ' ' || source[i-1] == '\t') {
+	positions := punctuation(source)
+	for n, i := range positions {
+		if source[i] == '#' && (i == 0 || n > 0 && positions[n-1] == i-1 && (source[i-1] == ' ' || source[i-1] == '\t')) {
 			return i
 		}
 	}

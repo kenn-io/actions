@@ -30,7 +30,7 @@ var (
 	markdownExtensions  = []string{".md", ".mdx", ".markdown"}
 	powershellCalls     = regexp.MustCompile(`(?im)(?:^|[;{}|])[ \t]*([\w-]+)[ \t]+`)
 	powershellFunctions = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
-	powershellHelpers   = regexp.MustCompile(`(?im)^[ \t]*function\s+([\w-]+)\((?:\[string\])?(\$\w+)\)[ \t]*\{[ \t]*(write-[\w-]+)[ \t]+(\$\w+)[^{}\r\n]*\}`)
+	powershellHelpers   = regexp.MustCompile(`(?im)^[ \t]*function\s+([\w-]+)\((?:\[string\])?(\$\w+)\)[ \t]*\{[ \t]*(write-[\w-]+)[ \t]+(\$\w+)(?:[ \t][^{}\r\n]*)?\}`)
 	powershellArguments = regexp.MustCompile(`^[ \t]*('(?:''|[^'\r\n])*'|"[^"\r\n]*")`)
 )
 
@@ -131,8 +131,12 @@ func shellStrings(source []byte) ([]example, error) {
 						if _, ok := node.(*syntax.CmdSubst); ok {
 							return false
 						}
-						if param, ok := node.(*syntax.ParamExp); ok && param.Param.Value == "1" {
-							printers[function.Name.Value] = true
+						if param, ok := node.(*syntax.ParamExp); ok {
+							text := string(source[param.Pos().Offset():param.End().Offset()])
+							if text == "$1" || text == "${1}" {
+								printers[function.Name.Value] = true
+							}
+							return false
 						}
 						return true
 					})
@@ -168,10 +172,19 @@ func shellStrings(source []byte) ([]example, error) {
 				continue
 			}
 			value := text[1 : len(text)-1]
-			if arg.Pos().Line() != call.Pos().Line() || strings.Contains(value, "\n") || text[0] == '"' && strings.ContainsAny(value, "$`\\") {
+			if quoted, ok := arg.Parts[0].(*syntax.DblQuoted); ok && slices.ContainsFunc(quoted.Parts, func(part syntax.WordPart) bool { _, literal := part.(*syntax.Lit); return !literal }) {
 				continue
 			}
-			messages = append(messages, example{value, int(arg.Pos().Line())})
+			if arg.Pos().Line() != call.Pos().Line() || strings.Contains(value, "\n") {
+				continue
+			}
+			values := []string{value}
+			if name == "printf" && i == 0 {
+				values = strings.Split(value, `\n`)
+			}
+			for _, value := range values {
+				messages = append(messages, example{value, int(arg.Pos().Line())})
+			}
 		}
 		return false
 	})
@@ -222,6 +235,8 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 						return "unreleased note", line - 1
 					case strings.Contains(previous, "release-commands: expected-failure"):
 						return "expected-failure marker", line - 1
+					case strings.Contains(previous, "release-commands: prose"):
+						return "prose", line - 1
 					}
 				}
 				line--
@@ -241,6 +256,9 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 				flush()
 				current.marker = marker
 				blockLine = key
+			}
+			if marker == "prose" {
+				continue
 			}
 			for candidate, more := message.text, true; more; _, candidate, more = strings.Cut(candidate, ":") {
 				if add(candidate, message.line) {
@@ -314,7 +332,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 							if index+1 < len(segments) {
 								following := string(segments[index+1].Bytes(source))
 								if strings.HasPrefix(strings.TrimLeft(following, " \t"), "[") && len(following) > len(strings.TrimLeft(following, " \t")) {
-									pending += " "
+									pending = pending[:commentIndex(pending)] + " "
 									continue
 								}
 							}

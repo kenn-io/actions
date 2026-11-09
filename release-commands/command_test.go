@@ -11,6 +11,7 @@ func TestCommands(t *testing.T) {
 		name, source string
 		want         [][]string
 	}{
+		{"escaped comment whitespace", `stub plain path\ #part --bogus`, [][]string{{"stub", "plain", `path\ #part`, "--bogus"}}},
 		{"nested host placeholder", "docbank mcp [--transport stdio|http] [--listen <ip:port>] [--allowed-host <host[:port]>]", [][]string{{"docbank", "mcp", "--transport", "stdio", "--listen", "<ip:port>", "--allowed-host", "<host[:port]>"}, {"docbank", "mcp", "--transport", "http", "--listen", "<ip:port>", "--allowed-host", "<host[:port]>"}}},
 		{"multiline comment", "if true; then # note\n  stub nope\nfi", [][]string{{"true"}, {"stub", "nope"}}},
 		{"quoted synopsis alternative", `stub run "a b"|c --bogus`, [][]string{{"stub", "run", "a b", "--bogus"}, {"stub", "run", "c", "--bogus"}}},

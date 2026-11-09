@@ -11,6 +11,17 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []exampleBlock
 	}{
+		{"shell transformed helper", ".sh", `info() { echo "${1:+Ready}"; }; info 'stub nope'`, nil},
+		{"shell nested transformed helper", ".sh", `info() { echo "${x:-$1}"; }; info 'stub nope'`, nil},
+		{"powershell transformed helper", ".ps1", "function info([string]$Message) { Write-Host $Message.Length }\ninfo 'stub nope'", nil},
+		{"shell literal prefixed helper", ".sh", `info() { echo "==> $1"; }; info 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"shell static double quoted backslashes", ".sh", `echo "stub run C:\\new"`, []exampleBlock{{commands: []example{{`stub run C:\\new`, 1}}}}},
+		{"printf double quoted newline", ".sh", `printf "stub nope\n"`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"printf prefixed newlines", ".sh", `printf '\nGet started:\n  stub group nope\n'`, []exampleBlock{{commands: []example{{"stub group nope", 1}}}}},
+		{"printf flag newline", ".sh", `printf 'Next: stub plain --log.level\n'`, []exampleBlock{{commands: []example{{"stub plain --log.level", 1}}}}},
+		{"synopsis after comment", ".md", "```sh\nstub plain file # note\n    [--bogus]\n```", []exampleBlock{{commands: []example{{"stub plain file  [--bogus]", 2}}}}},
+		{"installer prose marker scope", ".sh", "# release-commands: prose\necho 'stub installed successfully'\necho 'stub ready'\n\necho 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 5}}}}},
+		{"installer prose marker blank line", ".sh", "# release-commands: prose\n\necho 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 3}}}}},
 		{"powershell commented helper", ".ps1", "<#\nfunction info([string]$Message) { Write-Host $Message }\n#>\ninfo 'stub nope'", nil},
 		{"powershell block comment output call", ".ps1", "<#\nWrite-Host 'stub nope'\n#>", nil},
 		{"powershell quoted output call", ".ps1", `Write-Host "Details; Write-Host 'stub nope'"`, nil},
@@ -64,9 +75,4 @@ func TestExamples(t *testing.T) {
 			require.Equal(t, test.want, blocks)
 		})
 	}
-}
-
-func TestExamplesInvalidInstaller(t *testing.T) {
-	_, err := examples("example.sh", []byte("echo 'stub nope'\nfoo() { case"), []string{"stub"})
-	require.ErrorContains(t, err, "case")
 }

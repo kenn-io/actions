@@ -69,6 +69,7 @@ func TestReleaseCommands(t *testing.T) {
 		line                                int
 		binaries                            []string
 	}{
+		{"installer prose annotation", ".sh", "# release-commands: prose\necho 'stub installed successfully'\n\necho 'stub run file'", "", "", 0, []string{"stub"}},
 		{"markdown prose", ".md", "Getting started.", "", "", 0, []string{"stub"}},
 		{"installer without commands", ".sh", "echo hello", "example.sh:", "", 0, []string{"stub"}},
 		{"installer parse error names file", ".sh", "echo 'stub nope'\nfoo() { case", "example.sh:2:", "", 2, []string{"stub"}},
