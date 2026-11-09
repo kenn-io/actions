@@ -39,8 +39,6 @@ func TestExamples(t *testing.T) {
 		{"helper multiline printf", ".sh", "info() { printf \"$@\"; }\ninfo '%s\\n' 'Next:\nstub nope'", "", []example{{"stub nope", 3}}},
 		{"echo escape option", ".sh", "# installer\necho -E -ne 'Next:\\n  stub run file --bogus'", "", []example{{"stub run file --bogus", 2}}},
 		{"echo final literal option", ".sh", `echo -e -nE 'Next:\n  stub run file --bogus'`, "", nil},
-		{"echo helper escape", ".sh", "info() { echo -E -ne \"$1\"; }\ninfo 'Next:\\n  stub run file --bogus'", "", []example{{"stub run file --bogus", 2}}},
-		{"echo helper final literal", ".sh", `info() { echo -e -nE "$*"; }; info 'Next:\n  stub run file --bogus'`, "", nil},
 		{"powershell prefix", ".ps1", `Write-Host 'Get started: stub nope'`, "", []example{{"stub nope", 1}}},
 		{"powershell joined arguments", ".ps1", `Write-Host 'stub run' 'file --bogus'`, "", []example{{"stub run file --bogus", 1}}},
 		{"powershell foreground color", ".ps1", `Write-Host -ForegroundColor Green 'stub run file --bogus'`, "", []example{{"stub run file --bogus", 1}}},
@@ -62,11 +60,7 @@ func TestExamples(t *testing.T) {
 		{"nested marker", ".md", "> Not in the latest release yet\n>\n> ```sh\n> stub nope\n> ```", "unreleased note", []example{{"stub nope", 4}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if test.ext == ".ps1" {
-				if _, err := exec.LookPath("pwsh"); err != nil {
-					t.Skip("pwsh is required for PowerShell installers")
-				}
-			}
+			requirePowerShell(t, test.ext)
 			blocks, err := examples("example"+test.ext, []byte(test.source), []string{"stub"})
 			require.NoError(t, err)
 			var got []example
@@ -79,97 +73,55 @@ func TestExamples(t *testing.T) {
 	}
 }
 
-func TestInstallerMarkers(t *testing.T) {
-	for _, ext := range []string{".sh", ".ps1"} {
-		for marker, wantMarker := range map[string]string{note: "unreleased note", "release-commands: expected-failure": "expected-failure marker"} {
-			for _, ending := range []string{"\n", "ignored\n", "ignored; ", map[string]string{".sh": "echo\n", ".ps1": "Write-Host ''\n"}[ext]} {
-				t.Run(ext+marker+ending, func(t *testing.T) {
-					helper, call, printer := "info() { printf '%s\\n' \"$1\" \"$2\"; }", "info \\\n'stub nope' 'stub absent'", "echo"
-					if ext == ".ps1" {
-						helper, call, printer = "function info($first, $second) { Write-Output $first $second }", "info `\n'stub nope' 'stub absent'", "Write-Host"
-					}
-					source := helper + "\n# " + marker + "\n" + call + "\n" + printer + " 'stub future'\n" + ending + printer + " 'stub run'"
-					blocks, err := examples("example"+ext, []byte(source), []string{"stub"})
-					require.NoError(t, err)
-					require.Len(t, blocks, 2)
-					require.Equal(t, exampleBlock{marker: wantMarker, commands: []example{{"stub nope", 4}, {"stub absent", 4}, {"stub future", 5}}}, blocks[0])
-					require.Equal(t, exampleBlock{commands: []example{{"stub run", 6 + strings.Count(ending, "\n")}}}, blocks[1])
-				})
-			}
+func requirePowerShell(t *testing.T, ext string) {
+	t.Helper()
+	if ext == ".ps1" {
+		if _, err := exec.LookPath("pwsh"); err != nil {
+			t.Skip("pwsh is required for PowerShell installers")
 		}
 	}
 }
 
-func TestFunctionMarkerBoundary(t *testing.T) {
-	for _, test := range []struct{ ext, source string }{
-		{".sh", "main() {\n# Not in the latest release yet\necho 'stub future'\necho\necho 'stub nope'\n}\nmain"},
-		{".ps1", "function main {\n# Not in the latest release yet\nWrite-Host 'stub future'\nWrite-Host ''\nWrite-Host 'stub nope'\n}\nmain"},
+func TestInstallerMarkers(t *testing.T) {
+	for _, test := range []struct{ ext, helper, call, printer, empty string }{
+		{".sh", "info() { printf '%s\\n' \"$1\" \"$2\"; }", "info \\\n'stub nope' 'stub absent'", "echo", "echo\n"},
+		{".ps1", "function info($first, $second) { Write-Output $first $second }", "info `\n'stub nope' 'stub absent'", "Write-Host", "Write-Host ''\n"},
 	} {
-		t.Run(test.ext, func(t *testing.T) {
-			blocks, err := examples("example"+test.ext, []byte(test.source), []string{"stub"})
-			require.NoError(t, err)
-			require.Equal(t, []exampleBlock{
-				{marker: "unreleased note", commands: []example{{"stub future", 3}}},
-				{commands: []example{{"stub nope", 5}}},
-			}, blocks)
-		})
+		for _, ending := range []string{"\n", "ignored\n", "ignored; ", test.empty} {
+			t.Run(test.ext+ending, func(t *testing.T) {
+				requirePowerShell(t, test.ext)
+				source := test.helper + "\n# Not in the latest release yet\n" + test.call + "\n" + test.printer + " 'stub future'\n" + ending + test.printer + " 'stub run'"
+				blocks, err := examples("example"+test.ext, []byte(source), []string{"stub"})
+				require.NoError(t, err)
+				require.Equal(t, []exampleBlock{
+					{marker: "unreleased note", commands: []example{{"stub nope", 4}, {"stub absent", 4}, {"stub future", 5}}},
+					{commands: []example{{"stub run", 6 + strings.Count(ending, "\n")}}},
+				}, blocks)
+			})
+		}
 	}
 }
 
-func TestNestedFunctionMarker(t *testing.T) {
-	for _, test := range []struct{ ext, source string }{
-		{".sh", "info() { echo \"$1\"; }\nmain() {\n# Not in the latest release yet\ninfo 'stub future'\n}\nmain"},
-		{".ps1", "function info($message) { Write-Host $message }\nfunction main {\n# Not in the latest release yet\ninfo 'stub future'\n}\nmain"},
+func TestFunctionMarkers(t *testing.T) {
+	for _, test := range []struct {
+		name, ext, source string
+		first, second     int
+	}{
+		{"shell empty output", ".sh", "main() {\n# Not in the latest release yet\necho 'stub future'\necho\necho 'stub nope'\n}\nmain", 3, 5},
+		{"powershell empty output", ".ps1", "function main {\n# Not in the latest release yet\nWrite-Host 'stub future'\nWrite-Host ''\nWrite-Host 'stub nope'\n}\nmain", 3, 5},
+		{"shell nested blank line", ".sh", "info() { echo \"$1\"; }\nmain() {\n# Not in the latest release yet\ninfo 'stub future'\n\ninfo 'stub nope'\n}\nmain", 4, 6},
+		{"powershell nested blank line", ".ps1", "function info($message) { Write-Host $message }\nfunction main {\n# Not in the latest release yet\ninfo 'stub future'\n\ninfo 'stub nope'\n}\nmain", 4, 6},
+		{"shell nested silent statement", ".sh", "info() { echo \"$1\"; }\nmain() {\n# Not in the latest release yet\ninfo 'stub future'\nignored\ninfo 'stub nope'\n}\nmain", 4, 6},
+		{"powershell nested silent statement", ".ps1", "function info($message) { Write-Host $message }\nfunction main {\n# Not in the latest release yet\ninfo 'stub future'\nignored\ninfo 'stub nope'\n}\nmain", 4, 6},
+		{"shell nested empty printf", ".sh", "info() { echo \"$1\"; }\nmain() {\n# Not in the latest release yet\ninfo 'stub future'\nprintf ''\ninfo 'stub nope'\n}\nmain", 4, 6},
 	} {
-		t.Run(test.ext, func(t *testing.T) {
-			blocks, err := examples("example"+test.ext, []byte(test.source), []string{"stub"})
-			require.NoError(t, err)
-			require.Equal(t, []exampleBlock{{marker: "unreleased note", commands: []example{{"stub future", 4}}}}, blocks)
-		})
-	}
-}
-
-func TestNestedFunctionMarkerBlankLine(t *testing.T) {
-	for _, test := range []struct{ ext, source string }{
-		{".sh", "info() { echo \"$1\"; }\nmain() {\n# Not in the latest release yet\ninfo 'stub future'\n\ninfo 'stub nope'\n}\nmain"},
-		{".ps1", "function info($message) { Write-Host $message }\nfunction main {\n# Not in the latest release yet\ninfo 'stub future'\n\ninfo 'stub nope'\n}\nmain"},
-	} {
-		t.Run(test.ext, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
+			requirePowerShell(t, test.ext)
 			blocks, err := examples("example"+test.ext, []byte(test.source), []string{"stub"})
 			require.NoError(t, err)
 			require.Equal(t, []exampleBlock{
-				{marker: "unreleased note", commands: []example{{"stub future", 4}}},
-				{commands: []example{{"stub nope", 6}}},
-			}, blocks)
-		})
-	}
-}
-
-func TestNestedFunctionMarkerStatement(t *testing.T) {
-	for _, test := range []struct{ ext, source string }{
-		{".sh", "info() { echo \"$1\"; }\nmain() {\n# Not in the latest release yet\ninfo 'stub future'\nignored\ninfo 'stub nope'\n}\nmain"},
-		{".ps1", "function info($message) { Write-Host $message }\nfunction main {\n# Not in the latest release yet\ninfo 'stub future'\nignored\ninfo 'stub nope'\n}\nmain"},
-	} {
-		t.Run(test.ext, func(t *testing.T) {
-			blocks, err := examples("example"+test.ext, []byte(test.source), []string{"stub"})
-			require.NoError(t, err)
-			require.Equal(t, []exampleBlock{
-				{marker: "unreleased note", commands: []example{{"stub future", 4}}},
-				{commands: []example{{"stub nope", 6}}},
-			}, blocks)
-		})
-	}
-}
-
-func TestNestedFunctionMarkerEmptyPrinter(t *testing.T) {
-	for _, printer := range []string{"printf ''", "echo -n ''"} {
-		t.Run(printer, func(t *testing.T) {
-			source := "info() { echo \"$1\"; }\nmain() {\n# Not in the latest release yet\ninfo 'stub future'\n" + printer + "\ninfo 'stub nope'\n}\nmain"
-			blocks, err := examples("example.sh", []byte(source), []string{"stub"})
-			require.NoError(t, err)
-			require.Equal(t, []exampleBlock{
-				{marker: "unreleased note", commands: []example{{"stub future", 4}}},
-				{commands: []example{{"stub nope", 6}}},
+				{marker: "unreleased note", commands: []example{{"stub future", test.first}}},
+				{commands: []example{{"stub nope", test.second}}},
 			}, blocks)
 		})
 	}

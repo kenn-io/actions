@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,6 +26,36 @@ func TestDescribe(t *testing.T) {
 				require.Nil(t, got.flags.Lookup(test.absent))
 			} else {
 				require.NoError(t, got.flags.Parse(test.args))
+			}
+		})
+	}
+}
+
+func TestCheck(t *testing.T) {
+	for _, test := range []struct{ name, arguments, finding string }{
+		{"disabled flag parsing", "unsafe file --help=false", ""},
+		{"absent child", "group absent", `has no command "absent"`},
+		{"unknown flag", "run file --bogus", "unknown flag: --bogus"},
+		{"child flag before child", "group --limit 50 child ID", ""},
+		{"unknown flag before child", "group --bogus child ID", "unknown flag: --bogus"},
+		{"missing child after deferred flag", "--local=false group absent", `has no command "absent"`},
+		{"unknown clustered shorthand", "group child ID -hZ", "unknown shorthand flag: 'Z'"},
+		{"malformed shorthand", "run file -=oops", "unknown shorthand flag: '='"},
+		{"parent flag", "group --local child ID", "unknown flag: --local"},
+		{"inherited flag", "--config cfg group child ID", ""},
+		{"leaf arguments", "plain somefile", ""},
+		{"group argument synopsis", "named child", ""},
+		{"long assignment", "group --limit=anything child ID", ""},
+		{"short attached value", "group -n50 child ID", ""},
+		{"terminator", "group -- --bogus nope", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := check(t.Context(), fixtureBinary, strings.Fields(test.arguments))
+			if test.finding == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.finding)
 			}
 		})
 	}
