@@ -11,6 +11,18 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []exampleBlock
 	}{
+		{"shell conditional output", ".sh", `true && echo 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"shell inline else", ".sh", `if x; then echo 'ready'; else echo 'stub nope'; fi`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"shell conditional assignment", ".sh", `echo 'ready' && msg='stub nope'`, nil},
+		{"shell case arm", ".sh", "case x in\n  *) echo 'stub nope' ;;\nesac", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
+		{"printf unquoted format", ".sh", `printf %s 'stub plain \n--bogus'`, []exampleBlock{{commands: []example{{`stub plain \n--bogus`, 1}}}}},
+		{"printf double quoted newline", ".sh", `printf "Next:\\n  stub nope"`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"powershell tags", ".ps1", `Write-Information 'Ready' -Tags 'stub nope'`, nil},
+		{"powershell unquoted metadata", ".ps1", `Write-Host -ForegroundColor Green 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"powershell switch", ".ps1", `Write-Host -NoNewline 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"shell heredoc", ".sh", "cat > x <<EOF\necho 'stub nope'\ndon't\nEOF\necho 'stub run'", []exampleBlock{{commands: []example{{"stub run", 5}}}}},
+		{"shell escaped dollar", ".sh", `echo "stub plain \$path --bogus"`, []exampleBlock{{commands: []example{{"stub plain $path --bogus", 1}}}}},
+		{"powershell escaped dollar", ".ps1", "Write-Host \"stub plain `$path --bogus\"", []exampleBlock{{commands: []example{{"stub plain $path --bogus", 1}}}}},
 		{"version output beside command", ".md", "```text\nstub v0.38.0 (commit abc)\nstub nope\n```", []exampleBlock{{commands: []example{{"stub v0.38.0 (commit abc)", 2}, {"stub nope", 3}}}}},
 		{"shell direct output", ".sh", "# installer\necho 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
 		{"shell inline then", ".sh", "if true; then echo 'stub nope'; fi", []exampleBlock{{commands: []example{{"stub nope", 1}}}}},

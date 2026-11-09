@@ -18,7 +18,14 @@ var shellExpansion = &expand.Config{
 
 // Synopsis expansion preserves shell quoting for the shell parser that follows it.
 func commands(line string) ([][]string, error) {
-	line = line[:commentIndex(line)]
+	for start := commentIndex(line); start < len(line); start = commentIndex(line) {
+		end := strings.IndexByte(line[start:], '\n')
+		if end < 0 {
+			line = line[:start]
+		} else {
+			line = line[:start] + line[start+end:]
+		}
+	}
 	// Protect only unquoted placeholders from shell redirection parsing.
 	positions := punctuation(line)
 	for _, start := range slices.Backward(positions) {

@@ -11,6 +11,7 @@ func TestCommands(t *testing.T) {
 		name, source string
 		want         [][]string
 	}{
+		{"multiline comment", "if true; then # note\n  stub nope\nfi", [][]string{{"true"}, {"stub", "nope"}}},
 		{"quoted synopsis alternative", `stub run "a b"|c --bogus`, [][]string{{"stub", "run", "a b", "--bogus"}, {"stub", "run", "c", "--bogus"}}},
 		{"symbolic variables", `stub group $child`, [][]string{{"stub", "group", "$child"}}},
 		{"synopsis comment", "stub group #json|yaml <broken", [][]string{{"stub", "group"}}},

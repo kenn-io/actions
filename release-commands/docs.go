@@ -37,6 +37,21 @@ var (
 
 // installerStrings reads single-line quoted output arguments throughout the source.
 func installerStrings(source []byte, powershell bool) []example {
+	if !powershell {
+		if tree, err := syntax.NewParser().Parse(bytes.NewReader(source), ""); err == nil {
+			source = append([]byte(nil), source...)
+			syntax.Walk(tree, func(node syntax.Node) bool {
+				if redirect, ok := node.(*syntax.Redirect); ok && redirect.Hdoc != nil {
+					for i := redirect.Hdoc.Pos().Offset(); i < redirect.Hdoc.End().Offset(); i++ {
+						if source[i] != '\n' {
+							source[i] = ' '
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
 	matches := installerTokens.FindAllIndex(source, -1)
 	code := append([]byte(nil), source...)
 	for _, match := range matches {
@@ -59,7 +74,7 @@ func installerStrings(source []byte, powershell bool) []example {
 	// Rescan until no new wrapper appears, so declaration order doesn't matter.
 	for known := 0; known != len(printers); {
 		known, messages = len(printers), nil
-		call, boundary, escapes, argument, owners := "", true, false, 0, []string{}
+		call, boundary, escapes, argument, metadata, owners := "", true, false, 0, false, []string{}
 		for _, match := range matches {
 			text := string(source[match[0]:match[1]])
 			if strings.HasPrefix(text, "#") || strings.HasPrefix(text, "<#") {
@@ -70,8 +85,9 @@ func installerStrings(source []byte, powershell bool) []example {
 			} else if text == "}" && len(owners) > 0 {
 				owners = owners[:len(owners)-1]
 			}
-			if strings.ContainsAny(text, ";{}\n") && len(text) == 1 || boundary && !powershell && text == "then" {
-				call, boundary, escapes, argument = "", true, false, 0
+			operator := text == "&&" || text == "||" || text == "|" || !powershell && text == "&"
+			if strings.ContainsAny(text, ";{}\n") && len(text) == 1 || operator || boundary && !powershell && (text == "then" || text == "else" || text == "do" || strings.HasSuffix(text, ")")) {
+				call, boundary, escapes, argument, metadata = "", true, false, 0, false
 				continue
 			}
 			if boundary {
@@ -93,6 +109,11 @@ func installerStrings(source []byte, powershell bool) []example {
 				continue
 			}
 			if text[0] != '\'' && text[0] != '"' {
+				if call == "printf" && !strings.HasPrefix(text, "-") && !strings.ContainsAny(text, "<>") {
+					argument++
+				}
+				name := strings.ToLower(text)
+				metadata = powershell && strings.HasPrefix(name, "-") && !strings.Contains(name, ":") && !slices.Contains([]string{"-object", "-message", "-messagedata", "-nonewline", "-noenumerate"}, name)
 				if strings.Contains(text, "(") || call == "printf" && text == "-v" {
 					call = ""
 				}
@@ -103,26 +124,41 @@ func installerStrings(source []byte, powershell bool) []example {
 				}
 				continue
 			}
-			value := text[1 : len(text)-1]
+			value := colorPrefix.ReplaceAllString(text[1:len(text)-1], "")
+			if metadata || text[0] == '"' && expands(value, powershell) {
+				argument++
+				metadata = false
+				continue
+			}
 			switch {
 			case powershell && text[0] == '\'':
 				value = strings.ReplaceAll(value, "''", "'")
 			case powershell:
-				value = strings.ReplaceAll(strings.NewReplacer("`n", "\n", "`t", "\t", "`e", "\x1b", "`\"", "\"", "``", "`").Replace(value), "\"\"", "\"")
-			case call == "printf" && argument == 0 || escapes:
-				value, _, _ = expand.Format(nil, strings.ReplaceAll(value, "%", "%%"), nil)
+				value = strings.ReplaceAll(strings.NewReplacer("`n", "\n", "`t", "\t", "`e", "\x1b", "`\"", "\"", "``", "`", "`$", "$").Replace(value), "\"\"", "\"")
 			case text[0] == '"':
-				value = strings.NewReplacer(`\\`, `\`, `\"`, `"`).Replace(value)
+				value = strings.NewReplacer(`\\`, `\`, `\"`, `"`, `\$`, `$`, "\\`", "`").Replace(value)
 			}
-			value = colorPrefix.ReplaceAllString(value, "")
-			if text[0] == '"' && (strings.Contains(value, "$") || !powershell && strings.Contains(value, "`")) {
-				continue
+			if !powershell && (call == "printf" && argument == 0 || escapes) {
+				value, _, _ = expand.Format(nil, strings.ReplaceAll(value, "%", "%%"), nil)
 			}
 			argument++
 			messages = append(messages, example{value, bytes.Count(source[:match[0]], []byte{'\n'}) + 1})
 		}
 	}
 	return messages
+}
+
+func expands(value string, powershell bool) bool {
+	for i := 0; i < len(value); i++ {
+		if !powershell && value[i] == '\\' || powershell && value[i] == '`' {
+			i++
+			continue
+		}
+		if value[i] == '$' || !powershell && value[i] == '`' {
+			return true
+		}
+	}
+	return false
 }
 
 // visible returns the text a reader sees in node, so emphasis around the note still counts.
