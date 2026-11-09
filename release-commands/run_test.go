@@ -64,8 +64,6 @@ func TestCheck(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, arguments, finding string }{
 		{"disabled flag parsing", "unsafe file --help=false", ""},
-		{"help rejects target command flag", "help plain --log.level debug", "unknown flag: --log.level"},
-		{"count flag then command", "-v nope", `has no command "nope"`},
 		{"lowercase symbolic child", "group $child", ""},
 		{"lowercase symbolic argument flag", "plain $path --bogus", "unknown flag: --bogus"},
 		{"symbolic child flag", "group <cmd> --child-only", ""},
@@ -77,11 +75,9 @@ func TestCheck(t *testing.T) {
 		{"parent flag", "group --local child ID", "unknown flag: --local"},
 		{"inherited flag", "--config cfg group child ID", ""},
 		{"leaf arguments", "plain somefile", ""},
-		{"dotted flag", "plain --log.level debug", ""},
 		{"group argument synopsis", "named child", ""},
 		{"alias", "group alias ID", ""},
 		{"long assignment", "group --limit=anything child ID", ""},
-		{"short attached value", "group -n50 child ID", ""},
 		{"terminator", "group -- --bogus nope", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {

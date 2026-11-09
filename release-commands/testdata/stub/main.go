@@ -10,7 +10,6 @@ import (
 func main() {
 	root := &cobra.Command{Use: filepath.Base(os.Args[0]), SilenceErrors: true, SilenceUsage: true}
 	root.PersistentFlags().String("config", "", "Config path")
-	root.PersistentFlags().CountP("verbose", "v", "Verbosity")
 	group := &cobra.Command{Use: "group", Short: "Grouped commands", Run: func(cmd *cobra.Command, _ []string) { _ = cmd.Help() }}
 	group.Flags().Bool("local", false, "Parent flag")
 	child := &cobra.Command{Use: "child <id>", Aliases: []string{"alias"}, Short: "Read an ID", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}
@@ -23,7 +22,6 @@ func main() {
 	named.AddCommand(broken)
 	root.AddCommand(named)
 	plain := &cobra.Command{Use: "plain", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}
-	plain.Flags().String("log.level", "info", "Log level")
 	root.AddCommand(plain)
 	root.AddCommand(group, &cobra.Command{Use: "run <path>", Short: "Read a path", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}, &cobra.Command{Use: "unsafe <path>", DisableFlagParsing: true, Short: "Must never execute", Run: func(*cobra.Command, []string) { panic("disabled flag parsing command executed") }})
 	if err := root.Execute(); err != nil {

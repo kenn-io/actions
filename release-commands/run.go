@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -16,7 +15,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w.-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
+var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
 
 type usage struct {
 	output    string
@@ -140,7 +139,7 @@ func describe(output string, root *pflag.FlagSet) (usage, error) {
 				continue
 			}
 			u.flags.StringP(name, match[1], "", "")
-			if match[3] == "" || match[3] == "count" || strings.Contains(match[3], "[=") {
+			if match[3] == "" || strings.Contains(match[3], "[=") {
 				u.flags.Lookup(name).NoOptDefVal = "true"
 			}
 		}
@@ -156,7 +155,6 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 	if err != nil {
 		return err
 	}
-	var helpFlags *pflag.FlagSet
 	// Match Cobra's Find behavior before validating flags against the final page.
 	for i := 0; i < len(args); i++ {
 		word := args[i]
@@ -171,7 +169,7 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 			} else if len(name) >= 2 {
 				flag = current.flags.ShorthandLookup(name[1:2])
 			}
-			if (strings.HasPrefix(name, "--") || len(name) == 2) && !assigned && (flag == nil || flag.NoOptDefVal == "") && i+1 < len(args) {
+			if !assigned && (flag == nil || flag.NoOptDefVal == "") && i+1 < len(args) {
 				i++
 			}
 			continue
@@ -186,11 +184,6 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 		if err != nil {
 			return err
 		}
-		// Cobra's help command parses the whole invocation with its own flags.
-		if word == "help" && len(current.path) == 1 {
-			helpFlags = child.flags
-			continue
-		}
 		if n := len(current.path); child.output != current.output && len(child.path) == n+1 && slices.Equal(child.path[:n], current.path) && (child.path[n] == word || slices.Contains(child.aliases, word)) {
 			current = child
 			continue
@@ -201,5 +194,5 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 		break
 	}
 	// String values avoid type checks; a sentinel permits a flag without a sample.
-	return cmp.Or(helpFlags, current.flags).Parse(append(slices.Clone(args), ""))
+	return current.flags.Parse(append(slices.Clone(args), ""))
 }

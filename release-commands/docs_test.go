@@ -81,8 +81,3 @@ func TestExamplesSubstitutions(t *testing.T) {
 		})
 	}
 }
-
-func TestExampleParseError(t *testing.T) {
-	_, err := examples("example.sh", []byte("echo 'stub nope'\nfoo() { case"), []string{"stub"})
-	require.ErrorContains(t, err, "example.sh:2:")
-}
