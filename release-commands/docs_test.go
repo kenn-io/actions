@@ -11,6 +11,7 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []exampleBlock
 	}{
+		{"powershell block comment output call", ".ps1", "<#\nWrite-Host 'stub nope'\n#>", nil},
 		{"powershell quoted output call", ".ps1", `Write-Host "Details; Write-Host 'stub nope'"`, nil},
 		{"powershell ignored parameter", ".ps1", "function Write-Info([string]$Message) { Write-Host 'Ready' }\nWrite-Info 'stub nope'", nil},
 		{"printf assignment helper", ".sh", `remember() { printf -v message '%s' "$1"; }; remember 'stub nope'`, nil},
