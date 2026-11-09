@@ -71,6 +71,9 @@ func TestReleaseCommands(t *testing.T) {
 	}{
 		{"installer syntax error", ".sh", "echo 'stub run", "cannot read installer messages", 0, []string{"stub"}},
 		{"markdown parse escape", ".md", "`stub started (pid 12)`", "add <!-- release-commands: expected-failure -->", 1, []string{"stub"}},
+		{"quoted assignment parse failure", ".md", "`MODE=\"a b\" stub run (`", "add <!-- release-commands: expected-failure -->", 1, []string{"stub"}},
+		{"marked assigned missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`MODE=\"a b\" stub-helper started (pid 12)`", "", 0, []string{"stub", "stub-helper"}},
+		{"powershell generated newline diagnostic", ".ps1", "Write-Host \"Next:`nstub nope\"", `v1.0.0 has no command "nope"`, 1, []string{"stub"}},
 		{"marked missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`stub-helper started (pid 12)`", "", 0, []string{"stub", "stub-helper"}},
 		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"`, 3, []string{"stub"}},
 		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0, []string{"stbu"}},
@@ -80,6 +83,7 @@ func TestReleaseCommands(t *testing.T) {
 		{"passing marker", ".md", "Not in the latest release yet\n\n`stub run file`", "passes; remove unreleased note", 3, []string{"stub"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			requirePowerShell(t, test.ext)
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
 			require.NoError(t, os.WriteFile(file, []byte(test.content), 0o600))
 			var out, errOut bytes.Buffer

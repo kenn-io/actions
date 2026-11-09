@@ -18,6 +18,7 @@ import (
 var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w.-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
 
 type usage struct {
+	output    string
 	path      []string
 	aliases   []string
 	arguments bool
@@ -46,7 +47,7 @@ func help(ctx context.Context, binary string, path []string) (usage, error) {
 }
 
 func describe(output string) (usage, error) {
-	u := usage{flags: pflag.NewFlagSet("release help", pflag.ContinueOnError)}
+	u := usage{output: output, flags: pflag.NewFlagSet("release help", pflag.ContinueOnError)}
 	u.flags.SetOutput(io.Discard)
 	inUsage, hasChildren := false, false
 	for line := range strings.SplitSeq(output, "\n") {
@@ -168,7 +169,7 @@ func check(ctx context.Context, binary string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if n := len(current.path); len(child.path) == n+1 && slices.Equal(child.path[:n], current.path) && (child.path[n] == word || slices.Contains(child.aliases, word)) {
+		if n := len(current.path); child.output != current.output && len(child.path) == n+1 && slices.Equal(child.path[:n], current.path) && (child.path[n] == word || slices.Contains(child.aliases, word)) {
 			current = child
 			continue
 		}

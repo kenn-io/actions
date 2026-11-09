@@ -43,9 +43,14 @@ function StaticValues($expression, $environment) {
     }
     if ($expression -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
         $value = $expression.Value
+        $cursor = 0
         foreach ($nested in $expression.NestedExpressions) {
             $parts = @(StaticValues $nested $environment)
-            $value = $value.Replace($nested.Extent.Text, ($parts.Text -join ' '))
+            $start = $value.IndexOf($nested.Extent.Text, $cursor, [System.StringComparison]::Ordinal)
+            if ($start -lt 0) { continue }
+            $replacement = $parts.Text -join ' '
+            $value = $value.Substring(0, $start) + $replacement + $value.Substring($start + $nested.Extent.Text.Length)
+            $cursor = $start + $replacement.Length
             if ($parts.Count) { $line = $parts[0].Line }
         }
         [pscustomobject]@{ Text = $value; Line = $line }
@@ -73,9 +78,14 @@ function ReadCalls($root, $environment, $depth) {
                 $element = $call.CommandElements[$index]
                 if ($element -is [System.Management.Automation.Language.CommandParameterAst]) {
                     $parameter = $element.ParameterName
+                    $declaration = $parameters | Where-Object { $_.Name.VariablePath.UserPath -eq $parameter }
+                    if ($declaration.StaticType -eq [System.Management.Automation.SwitchParameter]) {
+                        $bound[$parameter] = @()
+                        continue
+                    }
                     if ($element.Argument) { $element = $element.Argument } else { $element = $call.CommandElements[++$index] }
                 } else {
-                    while ($position -lt $parameters.Count -and $bound.ContainsKey($parameters[$position].Name.VariablePath.UserPath)) { $position++ }
+                    while ($position -lt $parameters.Count -and ($bound.ContainsKey($parameters[$position].Name.VariablePath.UserPath) -or $parameters[$position].StaticType -eq [System.Management.Automation.SwitchParameter])) { $position++ }
                     if ($position -ge $parameters.Count) { continue }
                     $parameter = $parameters[$position++].Name.VariablePath.UserPath
                 }

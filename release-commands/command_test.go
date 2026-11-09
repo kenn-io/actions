@@ -11,6 +11,8 @@ func TestCommands(t *testing.T) {
 		name, source string
 		want         [][]string
 	}{
+		{"synopsis comment", "stub group #json|yaml <broken", [][]string{{"stub", "group"}}},
+		{"quoted comment", `stub run '#json|yaml'`, [][]string{{"stub", "run", "#json|yaml"}}},
 		{"alias", "stub group alias <id> --limit <n>", [][]string{{"stub", "group", "alias", "0", "--limit", "0"}}},
 		{"absent alternative", "stub group child|nope <id>", [][]string{{"stub", "group", "child", "0"}, {"stub", "group", "nope", "0"}}},
 		{"spaced synopsis alternatives", "stub run file [--config cfg | --bogus]", [][]string{{"stub", "run", "file", "--config", "cfg"}, {"stub", "run", "file", "--bogus"}}},

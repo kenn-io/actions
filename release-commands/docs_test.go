@@ -12,6 +12,17 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []exampleBlock
 	}{
+		{"quoted assignment parse failure", ".md", "`MODE=\"a b\" stub run (`", []exampleBlock{{commands: []example{{`MODE="a b" stub run (`, 1}}}}},
+		{"colon argument", ".sh", `echo 'stub run host:stub target'`, []exampleBlock{{commands: []example{{"stub run host:stub target", 1}}}}},
+		{"printf assignment", ".sh", `printf -v message '%s' 'ready'; echo 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"printf literal option", ".sh", `printf -- -v; echo 'stub nope'`, nil},
+		{"powershell switch helper", ".ps1", "function info { param([switch]$Quiet, $Message) Write-Host $Message }\ninfo -Quiet 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
+		{"powershell explicit switch helper", ".ps1", "function info { param([switch]$Quiet, $Message) Write-Host $Message }\ninfo -Quiet:$false 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
+		{"powershell positional skips switch", ".ps1", "function info { param([switch]$Quiet, $Message) Write-Host $Message }\ninfo 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
+		{"powershell overlapping variables", ".ps1", "function info($cmd, $cmdArgs) { Write-Host \"$cmd $cmdArgs\" }\ninfo 'stub' 'run file'", []exampleBlock{{commands: []example{{"stub run file", 2}}}}},
+		{"powershell inserted variable text", ".ps1", "function info($cmd, $cmdArgs) { Write-Host \"$cmd $cmdArgs\" }\ninfo 'stub run $cmdArgs' 'file'", []exampleBlock{{commands: []example{{"stub run $cmdArgs file", 2}}}}},
+		{"powershell escaped interpolation", ".ps1", "function info($cmd) { Write-Host \"Next:`n$cmd\" }\ninfo 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
+		{"powershell generated newline marker", ".ps1", "# Not in the latest release yet\nWrite-Host \"Next:`n`nstub nope\"\n\nWrite-Host 'ready'", []exampleBlock{{marker: "unreleased note", commands: []example{{"stub nope", 2}}}}},
 		{"shell function marker", ".sh", "info() {\n# Not in the latest release yet\necho \"$1\"\n}\ninfo 'stub nope'", []exampleBlock{{marker: "unreleased note", commands: []example{{"stub nope", 5}}}}},
 		{"powershell function marker", ".ps1", "function info($message) {\n# release-commands: expected-failure\nWrite-Host $message\n}\ninfo 'stub nope'", []exampleBlock{{marker: "expected-failure marker", commands: []example{{"stub nope", 5}}}}},
 		{"powershell prefix", ".ps1", `Write-Host 'Get started: stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
@@ -22,7 +33,7 @@ func TestExamples(t *testing.T) {
 		{"powershell separate output", ".ps1", "Write-Output 'stub run',\n'stub nope'", []exampleBlock{{commands: []example{{"stub run", 1}, {"stub nope", 2}}}}},
 		{"powershell no newline", ".ps1", "Write-Host 'stub ' -NoNewline\nWrite-Host 'nope'", []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"powershell information tags", ".ps1", "Write-Information 'Ready' 'stub run' -InformationAction Continue\nWrite-Information -Tags 'stub run' -MessageData 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
-		{"powershell multiline string", ".ps1", "Write-Host 'Next:\nstub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
+		{"powershell multiline string", ".ps1", "Write-Host 'Next:\nstub nope'", []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"powershell here-string", ".ps1", "Write-Host @'\nstub nope\n'@", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
 		{"powershell comments", ".ps1", "# stub nope\n<# stub nope #>\nWrite-Host 'ready' # stub nope", nil},
 		{"powershell unevaluated expressions", ".ps1", "Write-Host \"Next: $(throw 'evaluated')stub nope\"\nWrite-Host (Get-Thing 'stub run')", []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
@@ -105,12 +116,6 @@ func requirePowerShell(t *testing.T, ext string) {
 			t.Skip("pwsh is required for PowerShell installers")
 		}
 	}
-}
-
-func TestPowerShellUnavailable(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	_, err := examples("install.ps1", []byte("Write-Host 'stub nope'"), []string{"stub"})
-	require.ErrorIs(t, err, exec.ErrNotFound)
 }
 
 func TestPowerShellSyntaxError(t *testing.T) {

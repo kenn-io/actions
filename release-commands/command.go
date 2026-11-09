@@ -18,6 +18,7 @@ var shellExpansion = &expand.Config{
 
 // Synopsis expansion preserves shell quoting for the shell parser that follows it.
 func commands(line string) ([][]string, error) {
+	line = line[:commentIndex(line)]
 	// Protect only unquoted placeholders from shell redirection parsing.
 	positions := punctuation(line)
 	for _, start := range slices.Backward(positions) {
@@ -96,13 +97,29 @@ func punctuation(source string) []int {
 	return positions
 }
 
-func comment(source string) bool {
+func commentIndex(source string) int {
 	for _, i := range punctuation(source) {
 		if source[i] == '#' && (i == 0 || source[i-1] == ' ' || source[i-1] == '\t') {
-			return true
+			return i
 		}
 	}
-	return false
+	return len(source)
+}
+
+// commandName reads the executable even when later words have invalid shell syntax.
+func commandName(source string) string {
+	for word, err := range syntax.NewParser().WordsSeq(strings.NewReader(source)) {
+		if err != nil {
+			break
+		}
+		prefix, _, assigned := strings.Cut(source[word.Pos().Offset():word.End().Offset()], "=")
+		if assigned && syntax.ValidName(prefix) {
+			continue
+		}
+		name, _ := expand.Literal(shellExpansion, word)
+		return name
+	}
+	return ""
 }
 
 func synopses(source string) []string {

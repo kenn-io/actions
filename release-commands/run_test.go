@@ -35,6 +35,7 @@ func TestCheck(t *testing.T) {
 	for _, test := range []struct{ name, arguments, finding string }{
 		{"disabled flag parsing", "unsafe file --help=false", ""},
 		{"group positional arguments", "named alice extra", ""},
+		{"placeholder positional argument", "named name extra", ""},
 		{"child help error with positional parent", "named broken", "child help failed"},
 		{"absent child", "group absent", `has no command "absent"`},
 		{"unknown flag", "run file --bogus", "unknown flag: --bogus"},
@@ -42,7 +43,7 @@ func TestCheck(t *testing.T) {
 		{"unknown flag before child", "group --bogus child ID", "unknown flag: --bogus"},
 		{"missing child after deferred flag", "--local=false group absent", `has no command "absent"`},
 		{"unknown clustered shorthand", "group child ID -hZ", "unknown shorthand flag: 'Z'"},
-		{"malformed shorthand", "run file -=oops", "unknown shorthand flag: '='"},
+		{"malformed shorthand", "run -=oops file", "unknown shorthand flag: '='"},
 		{"parent flag", "group --local child ID", "unknown flag: --local"},
 		{"inherited flag", "--config cfg group child ID", ""},
 		{"leaf arguments", "plain somefile", ""},

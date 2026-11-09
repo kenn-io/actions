@@ -183,6 +183,9 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 			emit(value, append(args, example{line: int(call.Pos().Line())})[0].line)
 			return err
 		}
+		if values[0] == "-v" {
+			return nil
+		}
 		if values[0] == "--" && len(values) > 1 {
 			values, args = values[1:], args[1:]
 		}
@@ -222,21 +225,18 @@ func visible(node ast.Node, source []byte) string {
 func examples(file string, source []byte, binaries []string) ([]exampleBlock, error) {
 	var result []exampleBlock
 	var current exampleBlock
-	add := func(value string, line int) {
+	add := func(value string, line int) bool {
 		value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "$ "))
 		// An installer message that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
 		if err != nil && filepath.Ext(file) != ".md" {
-			return
+			return false
 		}
-		words := strings.Fields(value)
-		first := slices.IndexFunc(words, func(word string) bool {
-			name, _, assigned := strings.Cut(word, "=")
-			return !assigned || !syntax.ValidName(name)
-		})
-		if first >= 0 && slices.Contains(binaries, words[first]) || slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
+		if slices.Contains(binaries, commandName(value)) || slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
 			current.commands = append(current.commands, example{text: value, line: line})
+			return true
 		}
+		return false
 	}
 	if filepath.Ext(file) != ".md" {
 		read := shellStrings
@@ -275,7 +275,10 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		blockLine := -1
 		for _, message := range messages {
 			for offset, value := range strings.Split(termtext.StripANSI(message.Text), "\n") {
-				line := message.Line + offset
+				line := message.Line
+				if filepath.Ext(file) != ".ps1" {
+					line += offset
+				}
 				marker, key := markerFor(line)
 				if key != blockLine {
 					flush()
@@ -283,7 +286,9 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 					blockLine = key
 				}
 				for found := true; found; _, value, found = strings.Cut(value, ":") {
-					add(value, line)
+					if add(value, line) {
+						break
+					}
 				}
 			}
 		}
@@ -343,7 +348,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 							} else {
 								pending += strings.TrimSpace(value)
 							}
-							if !comment(pending) && (len(pending)-len(strings.TrimRight(pending, "\\")))%2 == 1 {
+							if commentIndex(pending) == len(pending) && (len(pending)-len(strings.TrimRight(pending, "\\")))%2 == 1 {
 								pending = strings.TrimSuffix(pending, "\\") + " "
 								continue
 							}
