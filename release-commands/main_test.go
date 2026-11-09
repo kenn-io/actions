@@ -71,6 +71,7 @@ func TestReleaseCommands(t *testing.T) {
 	}{
 		{"installer syntax error", ".sh", "echo 'stub run", "cannot read installer messages", 0, []string{"stub"}},
 		{"markdown parse escape", ".md", "`stub started (pid 12)`", "add <!-- release-commands: expected-failure -->", 1, []string{"stub"}},
+		{"command validation escape", ".md", "`stub version 1.2.3`", "add <!-- release-commands: expected-failure -->", 1, []string{"stub"}},
 		{"quoted assignment parse failure", ".md", "`MODE=\"a b\" stub run (`", "add <!-- release-commands: expected-failure -->", 1, []string{"stub"}},
 		{"marked assigned missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`MODE=\"a b\" stub-helper started (pid 12)`", "", 0, []string{"stub", "stub-helper"}},
 		{"powershell generated newline diagnostic", ".ps1", "Write-Host \"Next:`nstub nope\"", `v1.0.0 has no command "nope"`, 1, []string{"stub"}},

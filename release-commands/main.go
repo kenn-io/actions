@@ -85,7 +85,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 						break
 					}
 					if err := check(ctx, binary, args[1:]); err != nil {
-						problem = fmt.Sprintf("%s %s", *release, err)
+						problem = fmt.Sprintf("%s %s; for output samples, add <!-- release-commands: expected-failure --> before the block", *release, err)
 						break
 					}
 				}
