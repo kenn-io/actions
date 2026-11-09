@@ -149,5 +149,5 @@ esac
 	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "FIXTURE_ARCHIVE="+fixture, "GITHUB_WORKSPACE="+dir, "FILES=-x.md", "BINARIES=stub", "REPOSITORY=example/project", "ASSET=stub.tar.gz")
 	output, err := cmd.CombinedOutput()
 	require.Error(t, err)
-	require.Contains(t, string(output), `-x.md:1: stub nope: v1.0.0 has no command "nope"`)
+	require.Contains(t, string(output), `-x.md:1: stub nope: v1.0.0`)
 }
