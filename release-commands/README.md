@@ -34,7 +34,7 @@ Run the action in its own job. It installs its own Go version.
 
 Select this job as a required status check for `main`.
 
-Reference the action at `@main`, and pin it with the calling repository's `actions.lock`. Include `actions/setup-go@v7.0.0` in that lockfile because this action calls it. List each file and binary on its own line. The asset glob must match exactly one `.tar.gz`, excluding alternate builds such as `_homebrew_` archives. Binaries must sit at the archive root. `repository` defaults to the calling repository. `github-token` defaults to the job token; private releases need a token that can read them.
+Reference the action at `@main`, and pin it with the calling repository's `actions.lock`. Include `actions/setup-go@v7.0.0` in that lockfile because this action calls it. List each file and binary on its own line. The asset glob must match exactly one `.tar.gz`, excluding alternate builds such as `_homebrew_` archives. Binaries must be regular files at the archive root. `repository` defaults to the calling repository. `github-token` defaults to the job token; private releases need a token that can read them.
 
 A flag named alone or with an empty assignment checks its spelling without validating a value.
 
@@ -44,7 +44,7 @@ In `.md`, `.mdx`, and `.markdown` files, the checker reads fenced blocks and inl
 
 Installer examples are static, single-line quoted messages passed to shell `echo` or `printf`, PowerShell `Write-*` calls, or helpers that forward their first argument directly to one of those printers. PowerShell helpers use a one-line declaration such as `function Write-Info([string]$Message) { Write-Host $Message -ForegroundColor Green }`. A helper counts only when its parameter supplies the message. Helpers that call other helpers supply no examples. The checker reads output calls inside unused functions, and helper declaration order doesn't matter. Shell parsing keeps redirection filenames and heredoc contents separate from output arguments. `printf -v` assignments, other assignments, and arguments to other commands supply no examples.
 
-Messages begin with a listed binary or introduce it after a colon, such as `info "Get started: kata issue list"`. PowerShell calls put the quoted message first; metadata after it supplies no examples. PowerShell multiline strings and block comments are outside the supported syntax. Shell `printf` format strings decode `\\`, `\n`, and `\t`; newlines split messages. Other escapes stay literal, and colors stay in the text. Messages that don't parse as shell commands are treated as prose. A listed installer with no recognized command for a configured binary fails with its file path. The scanner runs in Go and requires no PowerShell installation.
+Messages must begin with a listed binary or introduce it after a colon, such as `info "Get started: kata issue list"`. PowerShell calls put the quoted message first. Parenthesized messages, arrays, and options before the message are skipped; metadata after it supplies no examples. PowerShell multiline strings and block comments are outside the supported syntax. Shell `printf` format strings decode `\\`, `\n`, and `\t`; newlines split messages. Other escapes stay literal, and colors stay in the text. Messages that don't parse as shell commands are treated as prose. A listed installer with no recognized command for a configured binary fails with its file path. The scanner runs in Go and requires no PowerShell installation.
 
 ## Mark unreleased commands
 

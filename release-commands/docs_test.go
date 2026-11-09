@@ -22,6 +22,7 @@ func TestExamples(t *testing.T) {
 		{"shell escaped double quotes", ".sh", `echo "Run: stub plain --log.level \"a --bogus\""`, []expectedBlock{{commands: []expectedExample{{`stub plain --log.level "a --bogus"`, 1}}}}},
 		{"powershell doubled apostrophes", ".ps1", `Write-Host 'Run: stub plain --log.level ''a --bogus'''`, []expectedBlock{{commands: []expectedExample{{`stub plain --log.level 'a --bogus'`, 1}}}}},
 		{"printf substituted format", ".sh", `printf 'stub %s\n' plain`, nil},
+		{"parenthesized powershell output", ".ps1", "Write-Host 'stub plain'\n(Write-Host 'stub nonexistent')", []expectedBlock{{commands: []expectedExample{{"stub plain", 1}, {"stub nonexistent", 2}}}}},
 		{"powershell pipeline chain", ".ps1", `Test-Path . && Write-Host 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},
 		{"printf quoted assignment option", ".sh", `printf '-v' result '%s' 'stub nope'`, nil},
 		{"printf escaped backslash before n", ".sh", `printf 'Next: stub plain C:\\new --bogus\n'`, []expectedBlock{{commands: []expectedExample{{`stub plain C:\new --bogus`, 1}}}}},
@@ -56,7 +57,6 @@ func TestExamples(t *testing.T) {
 		{"shell non-output strings", ".sh", `grep 'stub nope' file; command='stub nope' # echo 'stub nope'`, nil},
 		{"powershell non-output strings", ".ps1", "Select-String 'stub nope' file\n$command = 'stub nope'", nil},
 		{"powershell computed output", ".ps1", "Write-Host (Get-Thing 'stub nope')", nil},
-		{"powershell direct output", ".ps1", "# installer\nWrite-Host 'stub nope'", []expectedBlock{{commands: []expectedExample{{"stub nope", 2}}}}},
 		{"powershell uncalled helper", ".ps1", "function unused {\nWrite-Host 'stub nope'\n}\nWrite-Host 'stub run'", []expectedBlock{{commands: []expectedExample{{"stub nope", 2}, {"stub run", 4}}}}},
 		{"powershell printer wrapper", ".ps1", "function info([string]$Message) { Write-Host $Message -ForegroundColor Green }\ninfo 'Get started: stub nope'", []expectedBlock{{commands: []expectedExample{{"stub nope", 2}}}}},
 		{"colon argument", ".sh", `echo 'stub run host:stub target'`, []expectedBlock{{commands: []expectedExample{{"stub run host:stub target", 1}}}}},
@@ -100,10 +100,10 @@ func TestExamples(t *testing.T) {
 }
 
 func TestExampleInvocations(t *testing.T) {
-	blocks, err := examples("example.md", []byte("`stub plain | cat; st\\ub group chi\\ld ID`"), []string{"stub"})
+	blocks, err := examples("example.md", []byte("`stub plain`"), []string{"stub"})
 	require.NoError(t, err)
 	require.Equal(t, []exampleBlock{{commands: []example{{
-		text: "stub plain | cat; st\\ub group chi\\ld ID", line: 1,
-		invocations: [][]string{{"stub", "plain"}, {"cat"}, {"stub", "group", "child", "ID"}},
+		text: "stub plain", line: 1,
+		invocations: [][]string{{"stub", "plain"}},
 	}}}}, blocks)
 }

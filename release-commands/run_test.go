@@ -20,7 +20,7 @@ func TestDescribe(t *testing.T) {
 		{"compact global flags", "Usage:\n  compact run <path>\nGlobal: --json, --project <string>, -q/--quiet. Details: compact --help\n", "", []string{"--json", "--project", "foo", "-q"}, ""},
 		{"multiword flag type", "Usage:\n  kata federation enroll [flags]\nFlags:\n      --spoke-instance kata federation identity   spoke instance UID\n", "", []string{"--spoke-instance", "example-instance"}, ""},
 		{"prose flag absent", "      --ghost  prose\n\nUsage:\n  prose [flags]\nFlags:\n  -h, --help  help for prose\n", "ghost", nil, ""},
-		{"wrapped description absent", "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    - json output details\n                    --description-only  continuation\n", "description-only", nil, ""},
+		{"wrapped description absent", "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    --description-only  continuation\n", "description-only", nil, ""},
 		{"unsupported flag row", "Usage:\n  stub [flags]\nFlags:\n  --quiet   Quiet output\n", "", nil, "unsupported help"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

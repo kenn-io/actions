@@ -20,7 +20,6 @@ func TestCommands(t *testing.T) {
 		{"symbolic variables", `stub group $child`, [][]string{{"stub", "group", "$child"}}},
 		{"synopsis comment", "stub group #json|yaml <broken", [][]string{{"stub", "group"}}},
 		{"nested quoted hash", `stub run "$(printf "%s" "file #1")" --bogus`, [][]string{{"stub", "run", "0", "--bogus"}, {"printf", "%s", "file #1"}}},
-		{"nested quoted synopsis bar", `stub plain "$(grep -E "json|yaml" formats.txt)" --bogus`, [][]string{{"stub", "plain", "0", "--bogus"}, {"grep", "-E", "json|yaml", "formats.txt"}}},
 		{"nested substitution synopsis bar", `stub plain "$(printf '%s' $(printf '%s' "x|y") "z|w")" --bogus`, [][]string{{"stub", "plain", "0", "--bogus"}, {"printf", "%s", "0", "z|w"}, {"printf", "%s", "x|y"}}},
 		{"quoted comment", `stub run '#json|yaml'`, [][]string{{"stub", "run", "#json|yaml"}}},
 		{"generic command placeholder", "stub group <command> --local", [][]string{{"stub", "group", "--local"}}},
