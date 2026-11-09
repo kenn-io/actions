@@ -32,6 +32,7 @@ func TestDescribe(t *testing.T) {
 }
 
 func TestCheck(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ name, arguments, finding string }{
 		{"disabled flag parsing", "unsafe file --help=false", ""},
 		{"absent child", "group absent", `has no command "absent"`},
