@@ -11,6 +11,8 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []exampleBlock
 	}{
+		{"printf escaped backslash before n", ".sh", `printf 'Next: stub plain C:\\new --bogus\n'`, []exampleBlock{{commands: []example{{`stub plain C:\new --bogus`, 1}}}}},
+		{"printf tab between command words", ".sh", `printf 'stub\tplain --bogus'`, []exampleBlock{{commands: []example{{"stub\tplain --bogus", 1}}}}},
 		{"shell transformed helper", ".sh", `info() { echo "${1:+Ready}"; }; info 'stub nope'`, nil},
 		{"shell nested transformed helper", ".sh", `info() { echo "${x:-$1}"; }; info 'stub nope'`, nil},
 		{"powershell transformed helper", ".ps1", "function info([string]$Message) { Write-Host $Message.Length }\ninfo 'stub nope'", nil},

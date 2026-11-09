@@ -180,7 +180,7 @@ func shellStrings(source []byte) ([]example, error) {
 			}
 			values := []string{value}
 			if name == "printf" && i == 0 {
-				values = strings.Split(value, `\n`)
+				values = strings.Split(strings.NewReplacer(`\\`, `\`, `\n`, "\n", `\t`, "\t").Replace(value), "\n")
 			}
 			for _, value := range values {
 				messages = append(messages, example{value, int(arg.Pos().Line())})
