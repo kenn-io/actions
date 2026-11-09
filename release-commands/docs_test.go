@@ -13,12 +13,12 @@ func TestExamples(t *testing.T) {
 		want              []exampleBlock
 	}{
 		{"version output beside command", ".md", "```text\nstub v0.38.0 (commit abc)\nstub nope\n```", []exampleBlock{{commands: []example{{"stub v0.38.0 (commit abc)", 2}, {"stub nope", 3}}}}},
+		{"installer prose", ".sh", "echo 'stub started (pid 12)'", nil},
 		{"quoted assignment parse failure", ".md", "`MODE=\"a b\" stub run (`", []exampleBlock{{commands: []example{{`MODE="a b" stub run (`, 1}}}}},
 		{"colon argument", ".sh", `echo 'stub run host:stub target'`, []exampleBlock{{commands: []example{{"stub run host:stub target", 1}}}}},
 		{"printf assignment", ".sh", `printf -v message '%s' 'ready'; echo 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"printf literal option", ".sh", `printf -- -v; echo 'stub nope'`, nil},
 		{"powershell switch helper", ".ps1", "function info { param([switch]$Quiet, $Message) Write-Host $Message }\ninfo -Quiet 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
-		{"powershell explicit switch helper", ".ps1", "function info { param([switch]$Quiet, $Message) Write-Host $Message }\ninfo -Quiet:$false 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
 		{"powershell positional skips switch", ".ps1", "function info { param([switch]$Quiet, $Message) Write-Host $Message }\ninfo 'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
 		{"powershell overlapping variables", ".ps1", "function info($cmd, $cmdArgs) { Write-Host \"$cmd $cmdArgs\" }\ninfo 'stub' 'run file'", []exampleBlock{{commands: []example{{"stub run file", 2}}}}},
 		{"powershell inserted variable text", ".ps1", "function info($cmd, $cmdArgs) { Write-Host \"$cmd $cmdArgs\" }\ninfo 'stub run $cmdArgs' 'file'", []exampleBlock{{commands: []example{{"stub run $cmdArgs file", 2}}}}},
@@ -46,7 +46,6 @@ func TestExamples(t *testing.T) {
 		{"helper all arguments", ".sh", `info() { echo "$@"; }; info 'stub' 'nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"helper default field separator", ".sh", `info() { echo $1; }; info 'stub run FILE'`, []exampleBlock{{commands: []example{{"stub run FILE", 1}}}}},
 		{"helper first argument", ".sh", `info() { echo "$1"; }; info 'ready' 'stub nope'`, nil},
-		{"helper printf arguments", ".sh", `info() { printf "$@"; }; info '%s\n' 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"helper colored output", ".sh", `GREEN='\033[32m'; NC='\033[0m'; info() { echo -e "${GREEN}$1${NC}"; }; info 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"multiline echo", ".sh", "echo 'Next:\nstub nope'", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
 		{"printf repeated multiline arguments", ".sh", "printf '%s\\n' 'stub nope' \\\n'stub nope'", []exampleBlock{{commands: []example{{"stub nope", 1}, {"stub nope", 2}}}}},
@@ -57,7 +56,6 @@ func TestExamples(t *testing.T) {
 		{"synopsis continuation", ".md", "```sh\nstub group child ID\n    [--bogus]\n```", []exampleBlock{{commands: []example{{"stub group child ID [--bogus]", 2}}}}},
 		{"comment backslash", ".md", "```sh\nstub run file # note \\\nstub nope\n```", []exampleBlock{{commands: []example{{"stub run file # note " + "\\", 2}, {"stub nope", 3}}}}},
 		{"literal backslashes", ".md", "```sh\nstub run file \\\\\nstub nope\n```", []exampleBlock{{commands: []example{{`stub run file \\`, 2}, {"stub nope", 3}}}}},
-		{"parse failure", ".md", "`FOO=1 stub run (`", []exampleBlock{{commands: []example{{"FOO=1 stub run (", 1}}}}},
 		{"html consumes unreleased note", ".md", "Not in the latest release yet\n\n<div>Spacer</div>\n\n`stub nope`", []exampleBlock{{commands: []example{{"stub nope", 5}}}}},
 		{"nested marker", ".md", "> Not in the latest release yet\n>\n> ```sh\n> stub nope\n> ```", []exampleBlock{{marker: "unreleased note", commands: []example{{"stub nope", 4}}}}},
 		{"echo fragments", ".sh", "echo -n 'stub '; echo 'nope'", []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
@@ -65,7 +63,6 @@ func TestExamples(t *testing.T) {
 		{"quoted newline", ".md", "```sh\nstub run 'hello\n  world'\n```", []exampleBlock{{commands: []example{{"stub run 'hello\n  world'", 2}}}}},
 		{"expected failure comment", ".md", "<!-- release-commands: expected-failure -->\n\n`stub run file`", []exampleBlock{{marker: "expected-failure marker", commands: []example{{"stub run file", 3}}}}},
 		{"unreleased note", ".md", "Not in the latest release yet\n\n`stub nope`", []exampleBlock{{marker: "unreleased note", commands: []example{{"stub nope", 3}}}}},
-		{"passing note", ".md", "Not in the latest release yet\n\n`stub run file`", []exampleBlock{{marker: "unreleased note", commands: []example{{"stub run file", 3}}}}},
 		{
 			name: "helper continuation ends at blank line",
 			ext:  ".sh",

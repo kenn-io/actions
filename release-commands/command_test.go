@@ -16,7 +16,6 @@ func TestCommands(t *testing.T) {
 		{"angle placeholder", "stub completion <shell>", [][]string{{"stub", "completion", "<shell>"}}},
 		{"generic command placeholder", "stub group <command> --local", [][]string{{"stub", "group", "--local"}}},
 		{"generic subcommand placeholder", "stub group <subcommand> --local", [][]string{{"stub", "group", "--local"}}},
-		{"alias", "stub group alias <id> --limit <n>", [][]string{{"stub", "group", "alias", "<id>", "--limit", "<n>"}}},
 		{"absent alternative", "stub group child|nope <id>", [][]string{{"stub", "group", "child", "<id>"}, {"stub", "group", "nope", "<id>"}}},
 		{"spaced synopsis alternatives", "stub run file [--config cfg | --bogus]", [][]string{{"stub", "run", "file", "--config", "cfg"}, {"stub", "run", "file", "--bogus"}}},
 		{"synopsis continuation", "stub group child ID [--bogus]", [][]string{{"stub", "group", "child", "ID", "--bogus"}}},

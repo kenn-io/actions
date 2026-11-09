@@ -21,9 +21,6 @@ func main() {
 	broken.SetHelpFunc(func(*cobra.Command, []string) { fmt.Fprintln(os.Stderr, "child help failed"); os.Exit(2) })
 	named.AddCommand(broken)
 	root.AddCommand(named)
-	completion := &cobra.Command{Use: "completion", Run: func(cmd *cobra.Command, _ []string) { _ = cmd.Help() }}
-	completion.AddCommand(&cobra.Command{Use: "bash", Run: func(*cobra.Command, []string) { panic("must only ask for help") }})
-	root.AddCommand(completion)
 	plain := &cobra.Command{Use: "plain", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}
 	plain.Flags().String("log.level", "info", "Log level")
 	root.AddCommand(plain)

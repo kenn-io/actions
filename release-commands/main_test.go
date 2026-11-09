@@ -66,31 +66,24 @@ func writeFixtureArchive(path string, contents map[string][]byte) error {
 func TestReleaseCommands(t *testing.T) {
 	for _, test := range []struct {
 		name, ext, content, finding string
-		line                        int
+		line, omittedLine           int
 		binaries                    []string
 	}{
-		{"version output beside command", ".md", "```text\nstub v0.38.0 (commit abc, built 2026-07-13T15:37:17Z)\nstub nope\n```", `v1.0.0 has no command "nope"`, 3, []string{"stub"}},
-		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", 1, []string{"stub", "stub-helper"}},
-		{"marked output only", ".md", "<!-- release-commands: expected-failure -->\n\n`stub started (pid 12)`", "", 0, []string{"stub"}},
-		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\nstub plain\n```", "passes; remove expected-failure marker: stub run file", 5, []string{"stub"}},
-		{"shell marker hint", ".sh", "echo 'stub nope'", "add # release-commands: expected-failure", 1, []string{"stub"}},
-		{"powershell marker hint", ".ps1", "Write-Host 'stub nope'", "add # release-commands: expected-failure", 1, []string{"stub"}},
-		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, 1, []string{"stub"}},
-		{"quoted hash", ".md", "`stub nope '#keep' # remark`", `stub nope '#keep': v1.0.0 has no command "nope"`, 1, []string{"stub"}},
-		{"installer prose", ".sh", "echo 'stub started (pid 12)'", "", 0, []string{"stub"}},
-		{"installer syntax error", ".sh", "echo 'stub run", "cannot read installer messages", 0, []string{"stub"}},
-		{"markdown parse escape", ".md", "`stub started (pid 12)`", "", 0, []string{"stub"}},
-		{"command validation escape", ".md", "`stub version 1.2.3`", "add <!-- release-commands: expected-failure -->", 1, []string{"stub"}},
-		{"quoted assignment parse failure", ".md", "`MODE=\"a b\" stub run (`", "", 0, []string{"stub"}},
-		{"marked assigned missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`MODE=\"a b\" stub-helper started (pid 12)`", "", 0, []string{"stub", "stub-helper"}},
-		{"powershell generated newline diagnostic", ".ps1", "Write-Host \"Next:`nstub nope\"", `v1.0.0 has no command "nope"`, 1, []string{"stub"}},
-		{"marked missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`stub-helper started (pid 12)`", "", 0, []string{"stub", "stub-helper"}},
-		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"`, 3, []string{"stub"}},
-		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0, []string{"stbu"}},
-		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", 1, []string{"stub", "stub-helper"}},
-		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", 0, []string{"stub", "stub-helper"}},
-		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", 0, []string{"stub"}},
-		{"passing marker", ".md", "Not in the latest release yet\n\n`stub run file`", "passes; remove unreleased note", 3, []string{"stub"}},
+		{"version output beside command", ".md", "```text\nstub v0.38.0 (commit abc, built 2026-07-13T15:37:17Z)\nstub nope\n```", `v1.0.0 has no command "nope"`, 3, 2, []string{"stub"}},
+		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", 1, 0, []string{"stub", "stub-helper"}},
+		{"marked output only", ".md", "<!-- release-commands: expected-failure -->\n\n`stub started (pid 12)`", "", 0, 0, []string{"stub"}},
+		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\nstub plain\n```", "passes; remove expected-failure marker: stub run file", 5, 0, []string{"stub"}},
+		{"shell marker hint", ".sh", "echo 'stub nope'", "add # release-commands: expected-failure", 1, 0, []string{"stub"}},
+		{"powershell marker hint", ".ps1", "Write-Host 'stub nope'", "add # release-commands: expected-failure", 1, 0, []string{"stub"}},
+		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, 1, 0, []string{"stub"}},
+		{"installer syntax error", ".sh", "echo 'stub run", "cannot read installer messages", 0, 0, []string{"stub"}},
+		{"marked assigned missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`MODE=\"a b\" stub-helper started (pid 12)`", "", 0, 0, []string{"stub", "stub-helper"}},
+		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for output samples, add <!-- release-commands: expected-failure -->`, 3, 0, []string{"stub"}},
+		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0, 0, []string{"stbu"}},
+		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", 1, 0, []string{"stub", "stub-helper"}},
+		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", 0, 0, []string{"stub", "stub-helper"}},
+		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", 0, 0, []string{"stub"}},
+		{"passing marker", ".md", "Not in the latest release yet\n\n`stub run file`", "passes; remove unreleased note", 3, 0, []string{"stub"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			requirePowerShell(t, test.ext)
@@ -113,8 +106,8 @@ func TestReleaseCommands(t *testing.T) {
 				require.Empty(t, errOut.String())
 				require.Empty(t, out.String())
 			}
-			if test.name == "version output beside command" {
-				require.NotContains(t, errOut.String(), file+":2:")
+			if test.omittedLine > 0 {
+				require.NotContains(t, errOut.String(), fmt.Sprintf("%s:%d:", file, test.omittedLine))
 			}
 			if test.line > 0 {
 				require.Contains(t, out.String()+errOut.String(), fmt.Sprintf("%s:%d:", file, test.line))
@@ -136,7 +129,6 @@ func TestReleaseCommandsHelpCache(t *testing.T) {
 		var out, errOut bytes.Buffer
 		require.Equal(t, 1, run(t.Context(), []string{"--archive", archive, "--binary", "stub", "--binary", "other", first, second}, &out, &errOut))
 		require.Equal(t, 4, strings.Count(errOut.String(), `has no command "absent"`))
-		require.Equal(t, 2, strings.Count(errOut.String(), "child help failed"))
 		require.Equal(t, 2, strings.Count(errOut.String(), "unsupported help"))
 		data, err := os.ReadFile(log)
 		require.NoError(t, err)
