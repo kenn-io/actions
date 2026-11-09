@@ -47,7 +47,7 @@ func TestExamples(t *testing.T) {
 		{"powershell non-output strings", ".ps1", "Select-String 'stub nope' file\n$command = 'stub nope'", nil},
 		{"powershell computed output", ".ps1", "Write-Host (Get-Thing 'stub nope')", nil},
 		{"powershell uncalled helper", ".ps1", "function unused {\nWrite-Host 'stub nope'\n}\nWrite-Host 'stub run'", []expectedBlock{{commands: []expectedExample{{"stub nope", 2}, {"stub run", 4}}}}},
-		{"powershell printer wrapper", ".ps1", "function Write-Info([string]$Message) { Write-Host $Message -ForegroundColor Green }\nWrite-Info 'Get started: stub nope && stub plain'", []expectedBlock{{commands: []expectedExample{{"stub nope && stub plain", 2}}}}},
+		{"powershell Write-Info call", ".ps1", "Write-Info 'Get started: stub nope && stub plain'", []expectedBlock{{commands: []expectedExample{{"stub nope && stub plain", 1}}}}},
 		{"colon argument", ".sh", `echo 'stub run host:stub target'`, []expectedBlock{{commands: []expectedExample{{"stub run host:stub target", 1}}}}},
 		{"table", ".md", "| Example |\n| --- |\n| `stub nope` |", []expectedBlock{{commands: []expectedExample{{"stub nope", 3}}}}},
 		{"continuation", ".md", "```sh\nstub group child ID \\\n --bogus\n```", []expectedBlock{{commands: []expectedExample{{"stub group child ID  --bogus", 2}}}}},

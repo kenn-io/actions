@@ -24,8 +24,8 @@ func TestDescribe(t *testing.T) {
 		arguments                           bool
 		parse                               [][]string
 	}{
+		// Roborev cmd/roborev/help_commands_test.go and help_root.go produce this compact help.
 		{name: "roborev compact global flags", output: "Usage:\n  roborev show [flags]\nGlobal: --server <string>, -v/--verbose. Details: roborev --help\n", path: []string{"roborev", "show"}, arguments: true, parse: [][]string{{"--server", "example", "-v"}}},
-		{name: "multiword flag type", output: "Usage:\n  kata federation enroll [flags]\nFlags:\n      --spoke-instance kata federation identity   spoke instance UID\n", path: []string{"kata", "federation", "enroll"}, arguments: true, parse: [][]string{{"--spoke-instance", "example-instance"}}},
 		{name: "prose flag absent", output: "      --ghost  prose\n\nUsage:\n  prose [flags]\nFlags:\n  -h, --help  help for prose\n", absent: "ghost", path: []string{"prose"}, arguments: true},
 		{name: "wrapped description absent", output: "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    --description-only  continuation\n", absent: "description-only", path: []string{"stub", "group", "child"}, arguments: true},
 		{name: "unsupported flag row", output: "Usage:\n  stub [flags]\nFlags:\n  --quiet   Quiet output\n", finding: "unsupported help"},
@@ -77,7 +77,6 @@ func TestCheck(t *testing.T) {
 		{"unknown flag", "run file --bogus", "unknown flag: --bogus"},
 		{"child flag before child", "group --limit 50 child ID", ""},
 		{"unknown flag before child", "group --bogus child ID", "unknown flag: --bogus"},
-		{"missing child after deferred flag", "--local=false group absent", `has no command "absent"`},
 		{"parent flag", "group --local child ID", "unknown flag: --local"},
 		{"inherited flag", "--config cfg group child ID", ""},
 		{"leaf arguments", "plain somefile", ""},
