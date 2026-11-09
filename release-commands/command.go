@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"slices"
 	"strings"
 	"unicode"
@@ -10,6 +11,8 @@ import (
 )
 
 var shellExpansion = &expand.Config{
+	CmdSubst:  func(w io.Writer, _ *syntax.CmdSubst) error { _, err := io.WriteString(w, "$"); return err },
+	ProcSubst: func(*syntax.ProcSubst) (string, error) { return "$", nil },
 	Env: expand.FuncEnviron(func(name string) string {
 		if name == "IFS" {
 			return ""

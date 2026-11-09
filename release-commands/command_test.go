@@ -11,6 +11,8 @@ func TestCommands(t *testing.T) {
 		name, source string
 		want         [][]string
 	}{
+		{"command substitution", "kata export --output backups/kata-$(date -u +%Y%m%d).jsonl", [][]string{{"kata", "export", "--output", "backups/kata-$.jsonl"}, {"date", "-u", "+%Y%m%d"}}},
+		{"process substitution", "source <(msgvault completion bash)", [][]string{{"source", "$"}, {"msgvault", "completion", "bash"}}},
 		{"nested host placeholder", "docbank mcp [--transport stdio|http] [--listen <ip:port>] [--allowed-host <host[:port]>]", [][]string{{"docbank", "mcp", "--transport", "stdio", "--listen", "<ip:port>", "--allowed-host", "<host[:port]>"}, {"docbank", "mcp", "--transport", "http", "--listen", "<ip:port>", "--allowed-host", "<host[:port]>"}}},
 		{"symbolic variables", `stub group $child`, [][]string{{"stub", "group", "$child"}}},
 		{"quoted comment", `stub run '#json|yaml'`, [][]string{{"stub", "run", "#json|yaml"}}},
