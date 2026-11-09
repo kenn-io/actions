@@ -19,6 +19,8 @@ func TestExamples(t *testing.T) {
 		{"printf octal ANSI", ".sh", `printf '\033[32mstub nope\033[0m\n'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"printf hex ANSI", ".sh", `printf '\x1b[32mstub nope\x1b[0m\n'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"printf argument stays literal", ".sh", `printf '%s\n' 'stub run C:\new'`, []exampleBlock{{commands: []example{{`stub run C:\new`, 1}}}}},
+		{"echo escapes unsupported", ".sh", `echo -e "\n  stub nope"`, nil},
+		{"powershell escapes unsupported", ".ps1", "Write-Host \"`n  stub nope\"", nil},
 		{"uncalled helper", ".sh", "unused() {\necho 'stub nope'\n}\necho 'stub run'", []exampleBlock{{commands: []example{{"stub run", 4}}}}},
 		{"called helper", ".sh", "show() {\necho 'stub nope'\n}\nmain() { show; }\nmain", []exampleBlock{{commands: []example{{"stub nope", 2}}}}},
 		{"shell non-output strings", ".sh", `grep 'stub nope' file; command='stub nope' # echo 'stub nope'`, nil},

@@ -107,11 +107,12 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			if firstChecked < len(block.commands) && !blockFailed && block.marker != "" {
 				first := block.commands[firstChecked]
 				message := fmt.Sprintf("passes; remove %s: %s", block.marker, strings.TrimSpace(first.text[:commentIndex(first.text)]))
-				fmt.Fprintf(out, "%s:%d: %s\n", file, first.line, message)
 				if os.Getenv("GITHUB_ACTIONS") == "true" {
 					escape := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
 					property := strings.NewReplacer(":", "%3A", ",", "%2C")
 					fmt.Fprintf(out, "::notice file=%s,line=%d::%s\n", property.Replace(escape.Replace(file)), first.line, escape.Replace(message))
+				} else {
+					fmt.Fprintf(out, "%s:%d: %s\n", file, first.line, message)
 				}
 			}
 		}

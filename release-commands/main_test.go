@@ -64,6 +64,7 @@ func writeFixtureArchive(path string, contents map[string][]byte) error {
 }
 
 func TestReleaseCommands(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "")
 	for _, test := range []struct {
 		name, ext, content, finding string
 		line, omittedLine           int
@@ -123,14 +124,20 @@ func TestReleaseCommands(t *testing.T) {
 	}
 }
 
-func TestReleaseCommandsActionsNotice(t *testing.T) {
-	t.Setenv("GITHUB_ACTIONS", "true")
+func TestReleaseCommandsNotice(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "example,one.md")
 	require.NoError(t, os.WriteFile(file, []byte("Not in the latest release yet\n\n`stub run 100%`"), 0o600))
-	var out, errOut bytes.Buffer
-	require.Equal(t, 0, run(t.Context(), []string{"--archive", fixture, "--binary", "stub", file}, &out, &errOut), errOut.String())
-	require.Contains(t, out.String(), file+":3: passes; remove unreleased note: stub run 100%\n")
-	require.Contains(t, out.String(), "::notice file="+filepath.Dir(file)+"/example%2Cone.md,line=3::passes; remove unreleased note: stub run 100%25\n")
+	for _, test := range []struct{ name, actions, want string }{
+		{"local", "", file + ":3: passes; remove unreleased note: stub run 100%\n"},
+		{"actions", "true", "::notice file=" + filepath.Dir(file) + "/example%2Cone.md,line=3::passes; remove unreleased note: stub run 100%25\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("GITHUB_ACTIONS", test.actions)
+			var out, errOut bytes.Buffer
+			require.Equal(t, 0, run(t.Context(), []string{"--archive", fixture, "--binary", "stub", file}, &out, &errOut), errOut.String())
+			require.Equal(t, test.want, out.String())
+		})
+	}
 }
 
 func TestReleaseCommandsHelpCache(t *testing.T) {
