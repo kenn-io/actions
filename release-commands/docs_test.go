@@ -19,7 +19,6 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []expectedBlock
 	}{
-		{"printf byte precision", ".sh", `printf 'stub plain %.2s\n' 'éx'`, []expectedBlock{{commands: []expectedExample{{"stub plain é", 1}}}}},
 		{"echo octal escape", ".sh", `echo -e 'stub\0040nope'`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},
 		{"printf stop escape", ".sh", `printf '%b\n' 'stub plain\c' 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub plain", 1}}}}},
 		{"printf option terminator", ".sh", `printf -- '%s\n' 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},

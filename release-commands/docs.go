@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/yuin/goldmark/v2/ast"
@@ -21,8 +20,6 @@ type example struct {
 	text        string
 	line        int
 	invocations [][]string
-	// err is a static printer's render failure, reported once the message names a binary.
-	err error
 }
 type exampleBlock struct {
 	commands []example
@@ -38,7 +35,7 @@ var (
 	powershellHelpers   = regexp.MustCompile(`(?im)^[ \t]*function\s+([\w-]+)\((?:\[string\])?(\$\w+)\)[ \t]*\{[ \t]*(write-[\w-]+)[ \t]+(\$\w+)(?:[ \t][^{}\r\n]*)?\}`)
 	powershellArguments = regexp.MustCompile(`^[ \t]*('(?:''|[^'\r\n])*'|"[^"\r\n]*")`)
 	shellEscape         = regexp.MustCompile(`\\(?:0[0-7]{0,3}|[1-7][0-7]{0,2}|.)`)
-	printfConversion    = regexp.MustCompile(`\\.[[:xdigit:]]*|%[-+ 0-9]*(?:\.[0-9]*)?[[:alpha:]%]?|$`)
+	printfConversion    = regexp.MustCompile(`\\.|%[-+ 0-9]*[[:alpha:]%]`)
 )
 
 // installerStrings reads static, single-line output and one-step message helpers.
@@ -144,7 +141,7 @@ func shellStrings(source []byte) ([]example, error) {
 				return true
 			}
 			args, static := shellWords(call, source, &probe)
-			if output, printed, _ := shellOutput(args); static && printed && strings.Contains(output, probe) {
+			if output, printed := shellOutput(args); static && printed && strings.Contains(output, probe) {
 				helpers[function.Name.Value] = append(helpers[function.Name.Value], call)
 			}
 			return false
@@ -173,9 +170,9 @@ func shellStrings(source []byte) ([]example, error) {
 			if parameter != nil {
 				words, static = shellWords(printer, source, parameter)
 			}
-			if output, printed, err := shellOutput(words); static && printed {
+			if output, printed := shellOutput(words); static && printed {
 				for text := range strings.SplitSeq(output, "\n") {
-					messages = append(messages, example{text: text, line: int(call.Pos().Line()), err: err})
+					messages = append(messages, example{text: text, line: int(call.Pos().Line())})
 				}
 			}
 		}
@@ -220,17 +217,22 @@ func shellWords(call *syntax.CallExpr, source []byte, parameter *string) ([]stri
 	return args, true
 }
 
-func shellOutput(words []string) (string, bool, error) {
+func shellOutput(words []string) (string, bool) {
 	if len(words) < 2 {
-		return "", false, nil
+		return "", false
 	}
 	args := words[1:]
 	switch words[0] {
 	case "echo":
 		escapes := false
 		for len(args) > 0 && strings.HasPrefix(args[0], "-") && len(args[0]) > 1 && strings.Trim(args[0][1:], "neE") == "" {
-			if option := strings.LastIndexAny(args[0], "eE"); option > 0 {
-				escapes = args[0][option] == 'e'
+			for _, option := range args[0][1:] {
+				switch option {
+				case 'e':
+					escapes = true
+				case 'E':
+					escapes = false
+				}
 			}
 			args = args[1:]
 		}
@@ -238,45 +240,41 @@ func shellOutput(words []string) (string, bool, error) {
 		if escapes {
 			output, _ = shellEscapes(output, true)
 		}
-		return output, true, nil
+		return output, true
 	case "printf":
 		format, args := args[0], args[1:]
 		if format == "--" && len(args) > 0 {
 			format, args = args[0], args[1:]
 		} else if format != "-" && strings.HasPrefix(format, "-") {
-			return "", false, nil
+			return "", false
 		}
 		var output strings.Builder
-		// Each escape or conversion renders alone, so an unsupported one keeps the text before it and the rest as written; $ matches the tail.
-		for written, used := 0, 0; ; args, written, used = args[used:], 0, 0 {
+		for {
+			rendering, values, index, stopped := format, slices.Clone(args), 0, false
 			for _, span := range printfConversion.FindAllStringIndex(format, -1) {
-				conversion, value, stopped := format[span[0]:span[1]], strings.Join(args[min(used, len(args)):min(used+1, len(args))], ""), false
-				if verb := strings.TrimLeft(conversion, "%-+ .0123456789"); verb == "s" || verb == "b" {
-					if verb == "b" {
-						value, stopped = shellEscapes(value, false)
+				conversion := format[span[0]:span[1]]
+				if conversion[0] != '%' || conversion[len(conversion)-1] == '%' {
+					continue
+				}
+				if conversion[len(conversion)-1] == 'b' && index < len(values) {
+					values[index], stopped = shellEscapes(values[index], false)
+					rendering = rendering[:span[1]-1] + "s" + rendering[span[1]:]
+					if stopped {
+						rendering, values = rendering[:span[1]], values[:index+1]
+						break
 					}
-					// expand.Format rejects precision, so fmt pads and the shell's precision keeps that many bytes.
-					flags, precision, cut := strings.Cut(conversion[:len(conversion)-1], ".")
-					if n, _ := strconv.Atoi(precision); cut {
-						value = value[:min(n, len(value))]
-					}
-					conversion, value = "%s", fmt.Sprintf(flags+"s", value)
 				}
-				rendered, n, err := expand.Format(nil, conversion, []string{value})
-				if err != nil {
-					return output.String() + format[written:], true, err
-				}
-				if output.WriteString(format[written:span[0]] + rendered); stopped {
-					return output.String(), true, nil
-				}
-				written, used = span[1], used+n
+				index++
 			}
-			if used == 0 || used >= len(args) {
-				return output.String(), true, nil
+			rendered, used, err := expand.Format(nil, rendering, values)
+			output.WriteString(rendered)
+			if err != nil || stopped || used == 0 || used == len(args) {
+				return output.String(), err == nil
 			}
+			args = args[used:]
 		}
 	}
-	return "", false, nil
+	return "", false
 }
 
 // echo -e requires a leading zero for octal; both printers stop at an unescaped \c.
@@ -357,16 +355,16 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		blockLine := -1
 		for _, message := range messages {
-			if marker, key := markerFor(message.line); key != blockLine {
+			marker, key := markerFor(message.line)
+			if key != blockLine {
 				flush()
-				current.marker, blockLine = marker, key
+				current.marker = marker
+				blockLine = key
 			}
-			candidate, found := message.text, true
-			for found && !add(candidate, message.line) {
-				_, candidate, found = strings.Cut(candidate, ":")
-			}
-			if found && message.err != nil {
-				return nil, fmt.Errorf("%s:%d: %w", file, message.line, message.err)
+			for candidate, more := message.text, true; more; _, candidate, more = strings.Cut(candidate, ":") {
+				if add(candidate, message.line) {
+					break
+				}
 			}
 		}
 		flush()
