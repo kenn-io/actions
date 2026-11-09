@@ -94,19 +94,16 @@ func commands(line string) ([][]string, error) {
 // Only unquoted, unescaped punctuation participates in synopsis syntax.
 func punctuation(source string) []int {
 	var positions []int
-	quotes := "" // closing delimiters, innermost last; ")" ends a parenthesis opened inside a command substitution
+	var quote byte
 	for i := 0; i < len(source); i++ {
-		c, quote := source[i:i+1], quotes[max(len(quotes)-1, 0):]
-		switch {
-		case c == `\` && quote != "'":
+		switch c := source[i]; {
+		case c == '\\' && quote != '\'':
 			i++
-		case quote != "'" && strings.HasPrefix(source[i:], "$(") || quote == ")" && c == "(":
-			quotes, i = quotes+")", i+strings.IndexByte(source[i:], '(')
 		case c == quote:
-			quotes = quotes[:len(quotes)-1]
-		case (c == "'" || c == `"`) && quote != "'" && quote != `"`:
-			quotes += c
-		case quote == "":
+			quote = 0
+		case (c == '\'' || c == '"') && quote == 0:
+			quote = c
+		case quote == 0:
 			positions = append(positions, i)
 		}
 	}

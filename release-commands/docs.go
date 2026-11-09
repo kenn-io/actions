@@ -29,13 +29,8 @@ type exampleBlock struct {
 const note = "Not in the latest release yet"
 
 var (
-	markdownExtensions  = []string{".md", ".mdx", ".markdown"}
-	powershellCalls     = regexp.MustCompile(`(?im)(?:^|[;{}|(&])[ \t]*([\w-]+)[ \t]+`)
-	powershellFunctions = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
-	powershellHelpers   = regexp.MustCompile(`(?im)^[ \t]*function\s+([\w-]+)\((?:\[string\])?(\$\w+)\)[ \t]*\{[ \t]*(write-[\w-]+)[ \t]+(\$\w+)(?:[ \t][^{}\r\n]*)?\}`)
-	powershellArguments = regexp.MustCompile(`^[ \t]*('(?:''|[^'\r\n])*'|"[^"\r\n]*")`)
-	shellEscape         = regexp.MustCompile(`\\(?:0[0-7]{0,3}|[1-7][0-7]{0,2}|.)`)
-	printfConversion    = regexp.MustCompile(`\\.|%[-+ 0-9]*[[:alpha:]%]`)
+	markdownExtensions = []string{".md", ".mdx", ".markdown"}
+	powershellWrites   = regexp.MustCompile(`(?im)(?:^|[;{}|(&])[ \t]*write-[\w-]+[ \t]+('(?:''|[^'\r\n])*'|"[^"\r\n]*")`)
 )
 
 // installerStrings reads static, single-line output and one-step message helpers.
@@ -43,79 +38,18 @@ func installerStrings(source []byte, powershell bool) ([]example, error) {
 	if !powershell {
 		return shellStrings(source)
 	}
-	functions := map[string]bool{}
-	for _, match := range powershellFunctions.FindAllSubmatch(code(source), -1) {
-		functions[strings.ToLower(string(match[1]))] = false
-	}
-	for _, match := range powershellHelpers.FindAllSubmatch(code(source), -1) {
-		_, helper := functions[strings.ToLower(string(match[3]))]
-		if !helper && bytes.EqualFold(match[2], match[4]) {
-			functions[strings.ToLower(string(match[1]))] = true
-		}
-	}
 	var messages []example
-	for _, match := range powershellCalls.FindAllSubmatchIndex(code(source), -1) {
-		name := strings.ToLower(string(source[match[2]:match[3]]))
-		forwarded, declared := functions[name]
-		if !forwarded && (declared || !strings.HasPrefix(name, "write-")) {
-			continue
-		}
-		rest := string(source[match[3]:])
-		arg := powershellArguments.FindStringSubmatch(rest)
-		if arg == nil {
-			continue
-		}
-		text := arg[1]
+	for _, match := range powershellWrites.FindAllSubmatchIndex(source, -1) {
+		text := string(source[match[2]:match[3]])
 		value := text[1 : len(text)-1]
 		if text[0] == '\'' {
 			value = strings.ReplaceAll(value, "''", "'")
 		}
 		if text[0] == '\'' || !strings.ContainsAny(value, "$`") {
-			messages = append(messages, example{text: value, line: bytes.Count(source[:match[3]], []byte{'\n'}) + 1})
+			messages = append(messages, example{text: value, line: bytes.Count(source[:match[2]], []byte{'\n'}) + 1})
 		}
 	}
 	return messages, nil
-}
-
-// code blanks PowerShell comments and quoted text so only real calls remain matchable.
-func code(source []byte) []byte {
-	masked := bytes.Clone(source)
-	var quote byte
-	for i := 0; i < len(masked); i++ {
-		switch c := masked[i]; {
-		case quote == '<' && c == '#' && i+1 < len(masked) && masked[i+1] == '>':
-			masked[i], masked[i+1], quote = ' ', ' ', 0
-			i++
-		case quote == '#' && c == '\n':
-			quote = 0
-		case quote == '"' && c == '`' && i+1 < len(masked):
-			masked[i], masked[i+1] = ' ', ' '
-			i++
-		case quote != 0 && c == quote && quote != '<' && quote != '#':
-			quote = 0
-		case quote == 0 && c == '@' && i+1 < len(masked) && (masked[i+1] == '\'' || masked[i+1] == '"'):
-			end := bytes.Index(masked[i:], []byte{'\n', masked[i+1], '@'})
-			if end < 0 {
-				end = len(masked) - i
-			}
-			for j := i; j < i+end; j++ {
-				if masked[j] != '\n' {
-					masked[j] = ' '
-				}
-			}
-			i += end + 2
-		case quote == 0 && c == '<' && i+1 < len(masked) && masked[i+1] == '#':
-			masked[i], masked[i+1], quote = ' ', ' ', '<'
-			i++
-		case quote == 0 && c == '#' && (i == 0 || strings.IndexByte(" \t\r\n;{}|(", masked[i-1]) >= 0):
-			masked[i], quote = ' ', '#'
-		case quote == 0 && (c == '\'' || c == '"'):
-			quote = c
-		case quote != 0 && c != '\n':
-			masked[i] = ' '
-		}
-	}
-	return masked
 }
 
 // shellStrings renders static printer calls and one-step message helpers.
@@ -132,8 +66,7 @@ func shellStrings(source []byte) ([]example, error) {
 			return true
 		}
 		syntax.Walk(function.Body, func(node syntax.Node) bool {
-			switch node.(type) {
-			case *syntax.FuncDecl, *syntax.Redirect:
+			if _, ok := node.(*syntax.FuncDecl); ok {
 				return false
 			}
 			call, ok := node.(*syntax.CallExpr)
@@ -150,9 +83,6 @@ func shellStrings(source []byte) ([]example, error) {
 	})
 	var messages []example
 	syntax.Walk(tree, func(node syntax.Node) bool {
-		if _, ok := node.(*syntax.Redirect); ok {
-			return false
-		}
 		call, ok := node.(*syntax.CallExpr)
 		if !ok {
 			return true
@@ -183,9 +113,6 @@ func shellStrings(source []byte) ([]example, error) {
 
 // shellWords accepts literal words, or an unchanged first helper parameter.
 func shellWords(call *syntax.CallExpr, source []byte, parameter *string) ([]string, bool) {
-	if call.Pos().Line() != call.End().Line() {
-		return nil, false
-	}
 	config := &expand.Config{}
 	if parameter != nil {
 		config.Env = expand.ListEnviron("1=" + *parameter)
@@ -221,82 +148,14 @@ func shellOutput(words []string) (string, bool) {
 	if len(words) < 2 {
 		return "", false
 	}
-	args := words[1:]
 	switch words[0] {
 	case "echo":
-		escapes := false
-		for len(args) > 0 && strings.HasPrefix(args[0], "-") && len(args[0]) > 1 && strings.Trim(args[0][1:], "neE") == "" {
-			for _, option := range args[0][1:] {
-				switch option {
-				case 'e':
-					escapes = true
-				case 'E':
-					escapes = false
-				}
-			}
-			args = args[1:]
-		}
-		output := strings.Join(args, " ")
-		if escapes {
-			output, _ = shellEscapes(output, true)
-		}
-		return output, true
+		return strings.Join(words[1:], " "), true
 	case "printf":
-		format, args := args[0], args[1:]
-		if format == "--" && len(args) > 0 {
-			format, args = args[0], args[1:]
-		} else if format != "-" && strings.HasPrefix(format, "-") {
-			return "", false
-		}
-		var output strings.Builder
-		for {
-			rendering, values, index, stopped := format, slices.Clone(args), 0, false
-			for _, span := range printfConversion.FindAllStringIndex(format, -1) {
-				conversion := format[span[0]:span[1]]
-				if conversion[0] != '%' || conversion[len(conversion)-1] == '%' {
-					continue
-				}
-				if conversion[len(conversion)-1] == 'b' && index < len(values) {
-					values[index], stopped = shellEscapes(values[index], false)
-					rendering = rendering[:span[1]-1] + "s" + rendering[span[1]:]
-					if stopped {
-						rendering, values = rendering[:span[1]], values[:index+1]
-						break
-					}
-				}
-				index++
-			}
-			rendered, used, err := expand.Format(nil, rendering, values)
-			output.WriteString(rendered)
-			if err != nil || stopped || used == 0 || used == len(args) {
-				return output.String(), err == nil
-			}
-			args = args[used:]
-		}
+		output, _, err := expand.Format(nil, words[1], words[2:])
+		return output, err == nil
 	}
 	return "", false
-}
-
-// echo -e requires a leading zero for octal; both printers stop at an unescaped \c.
-func shellEscapes(value string, echo bool) (string, bool) {
-	stopped := false
-	for _, span := range slices.Backward(shellEscape.FindAllStringIndex(value, -1)) {
-		escape := value[span[0]:span[1]]
-		switch {
-		case escape == `\c`:
-			value, stopped = value[:span[0]], true
-		case echo && escape[1] >= '1' && escape[1] <= '7':
-			value = value[:span[0]] + `\` + value[span[0]:]
-		case escape[1] >= '0' && escape[1] <= '7':
-			n := 0
-			for _, digit := range strings.TrimPrefix(escape[1:], "0") {
-				n = n*8 + int(digit-'0')
-			}
-			value = value[:span[0]] + fmt.Sprintf(`\%03o`, byte(n)) + value[span[1]:]
-		}
-	}
-	rendered, _, _ := expand.Format(nil, value, nil)
-	return rendered, stopped
 }
 
 // visible returns the text a reader sees in node, so emphasis around the note still counts.
@@ -410,16 +269,9 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 					if code, ok := node.(*ast.CodeBlock); ok && entering {
 						pending, start := "", 0
 						segments := code.Value.Segments()
-						prompted := false
-						for _, segment := range segments {
-							prompted = prompted || strings.HasPrefix(strings.TrimSpace(string(segment.Bytes(source))), "$ ")
-						}
 						for index, segment := range segments {
 							value := strings.TrimRight(string(segment.Bytes(source)), "\r\n")
 							if pending == "" {
-								if prompted && !strings.HasPrefix(strings.TrimSpace(value), "$ ") {
-									continue
-								}
 								start = bytes.Count(source[:segment.Start], []byte{'\n'}) + 1
 								pending = strings.TrimPrefix(strings.TrimLeft(value, " \t"), "$ ")
 							} else if strings.HasSuffix(pending, "\n") {
@@ -435,7 +287,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 								pending += "\n"
 								continue
 							}
-							if !prompted && index+1 < len(segments) {
+							if index+1 < len(segments) {
 								following := string(segments[index+1].Bytes(source))
 								if strings.HasPrefix(strings.TrimLeft(following, " \t"), "[") && len(following) > len(strings.TrimLeft(following, " \t")) {
 									pending = pending[:commentIndex(pending)] + " "

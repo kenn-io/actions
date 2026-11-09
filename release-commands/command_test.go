@@ -11,7 +11,6 @@ func TestCommands(t *testing.T) {
 		name, source string
 		want         [][]string
 	}{
-		{"unquoted substitution pipeline", `stub plain $(printf x|cat) --bogus`, [][]string{{"stub", "plain", "$", "--bogus"}, {"printf", "x"}, {"cat"}}},
 		{"substituted child", `stub group "$(printf child)" ID`, [][]string{{"stub", "group", "$", "ID"}, {"printf", "child"}}},
 		{"escaped executable and command", `st\ub pl\ain --bogus`, [][]string{{"stub", "plain", "--bogus"}}},
 		{"quoted backslashes", `stub plain 'C:\new' "C:\new" C:\\new`, [][]string{{"stub", "plain", `C:\new`, `C:\new`, `C:\new`}}},
@@ -22,7 +21,6 @@ func TestCommands(t *testing.T) {
 		{"symbolic variables", `stub group $child`, [][]string{{"stub", "group", "$child"}}},
 		{"synopsis comment", "stub group #json|yaml <broken", [][]string{{"stub", "group"}}},
 		{"nested quoted hash", `stub run "$(printf "%s" "file #1")" --bogus`, [][]string{{"stub", "run", "$", "--bogus"}, {"printf", "%s", "file #1"}}},
-		{"nested substitution synopsis bar", `stub plain "$(printf '%s' $(printf '%s' "x|y") "z|w")" --bogus`, [][]string{{"stub", "plain", "$", "--bogus"}, {"printf", "%s", "$", "z|w"}, {"printf", "%s", "x|y"}}},
 		{"quoted comment", `stub run '#json|yaml'`, [][]string{{"stub", "run", "#json|yaml"}}},
 		{"generic command placeholder", "stub group <command> --local", [][]string{{"stub", "group", "--local"}}},
 		{"generic subcommand placeholder", "stub group <subcommand> --local", [][]string{{"stub", "group", "--local"}}},
