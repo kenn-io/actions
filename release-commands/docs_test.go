@@ -19,6 +19,10 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []expectedBlock
 	}{
+		{"printf unused operand", ".sh", `printf 'stub plain\n' 'stub nonexistent'`, []expectedBlock{{commands: []expectedExample{{"stub plain", 1}}}}},
+		{"printf helper unused operand", ".sh", `info() { printf 'Ready\n' "$1"; }; info 'stub nonexistent'`, nil},
+		{"printf unsupported conversion", ".sh", `printf '%d\n' 'stub nonexistent'`, nil},
+		{"printf helper message operand", ".sh", `info() { printf '%s\n' "$1"; }; info 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},
 		{"shell escaped double quotes", ".sh", `echo "Run: stub plain --log.level \"a --bogus\""`, []expectedBlock{{commands: []expectedExample{{`stub plain --log.level "a --bogus"`, 1}}}}},
 		{"powershell doubled apostrophes", ".ps1", `Write-Host 'Run: stub plain --log.level ''a --bogus'''`, []expectedBlock{{commands: []expectedExample{{`stub plain --log.level 'a --bogus'`, 1}}}}},
 		{"printf substituted format", ".sh", `printf 'stub %s\n' plain`, nil},

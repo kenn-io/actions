@@ -113,8 +113,26 @@ func shellStrings(source []byte) ([]example, error) {
 	}
 	// Helpers forward their first argument directly to a printer.
 	printers := map[string]bool{"echo": true, "printf": true}
-	prints := func(call *syntax.CallExpr) bool {
-		return len(call.Args) > 1 && (call.Args[0].Lit() == "echo" || call.Args[0].Lit() == "printf" && unquote(call.Args[1]) != "-v")
+	printedArgs := func(call *syntax.CallExpr) []*syntax.Word {
+		if len(call.Args) < 2 {
+			return nil
+		}
+		switch call.Args[0].Lit() {
+		case "echo":
+			return call.Args[1:]
+		case "printf":
+			format := strings.ReplaceAll(unquote(call.Args[1]), "%%", "")
+			if format == "-v" {
+				return nil
+			}
+			if !strings.Contains(format, "%") {
+				return call.Args[1:2]
+			}
+			if !strings.Contains(strings.ReplaceAll(format, "%s", ""), "%") {
+				return call.Args[2:]
+			}
+		}
+		return nil
 	}
 	syntax.Walk(tree, func(node syntax.Node) bool {
 		function, ok := node.(*syntax.FuncDecl)
@@ -130,22 +148,20 @@ func shellStrings(source []byte) ([]example, error) {
 			if !ok {
 				return true
 			}
-			if prints(call) {
-				for _, arg := range call.Args[1:] {
-					syntax.Walk(arg, func(node syntax.Node) bool {
-						if _, ok := node.(*syntax.CmdSubst); ok {
-							return false
+			for _, arg := range printedArgs(call) {
+				syntax.Walk(arg, func(node syntax.Node) bool {
+					if _, ok := node.(*syntax.CmdSubst); ok {
+						return false
+					}
+					if param, ok := node.(*syntax.ParamExp); ok {
+						text := string(source[param.Pos().Offset():param.End().Offset()])
+						if text == "$1" || text == "${1}" {
+							printers[function.Name.Value] = true
 						}
-						if param, ok := node.(*syntax.ParamExp); ok {
-							text := string(source[param.Pos().Offset():param.End().Offset()])
-							if text == "$1" || text == "${1}" {
-								printers[function.Name.Value] = true
-							}
-							return false
-						}
-						return true
-					})
-				}
+						return false
+					}
+					return true
+				})
 			}
 			return false
 		})
@@ -164,12 +180,12 @@ func shellStrings(source []byte) ([]example, error) {
 			return false
 		}
 		name := call.Args[0].Lit()
-		printed := printers[name]
-		if name == "printf" && !prints(call) {
-			return false
+		args := printedArgs(call)
+		if name != "echo" && name != "printf" && printers[name] {
+			args = call.Args[1:2]
 		}
-		for i, arg := range call.Args[1:] {
-			if !printed || name != "echo" && name != "printf" && i != 0 || len(arg.Parts) != 1 {
+		for _, arg := range args {
+			if len(arg.Parts) != 1 {
 				continue
 			}
 			text := string(source[arg.Pos().Offset():arg.End().Offset()])
@@ -184,10 +200,7 @@ func shellStrings(source []byte) ([]example, error) {
 				continue
 			}
 			values := []string{value}
-			if name == "printf" && i == 0 {
-				if strings.Contains(strings.ReplaceAll(value, "%%", ""), "%") {
-					continue
-				}
+			if name == "printf" && arg == call.Args[1] {
 				values = strings.Split(strings.NewReplacer(`\\`, `\`, `\n`, "\n", `\t`, "\t", "%%", "%").Replace(value), "\n")
 			}
 			for _, value := range values {
