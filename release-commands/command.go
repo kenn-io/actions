@@ -44,9 +44,6 @@ func commands(line string) ([][]string, error) {
 			return nil, err
 		}
 		syntax.Walk(tree, func(node syntax.Node) bool {
-			if _, substitution := node.(*syntax.CmdSubst); substitution {
-				return false
-			}
 			call, ok := node.(*syntax.CallExpr)
 			if !ok || err != nil {
 				return err == nil

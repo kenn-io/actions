@@ -68,6 +68,7 @@ func TestReleaseCommands(t *testing.T) {
 		name, ext, content, finding string
 		line                        int
 	}{
+		{"markdown command substitution", ".md", "```sh\nTOKEN=$(stub nope)\n```", `has no command "nope"`, 2},
 		{"markdown parse escape", ".md", "`stub started (pid 12)`", "add <!-- release-commands: expected-failure -->", 1},
 		{"installer prose escape", ".sh", "# release-commands: expected-failure\necho 'stub is installed'", "", 0},
 		{"installer unreleased", ".sh", "# Not in the latest release yet\necho 'stub future'", "", 0},

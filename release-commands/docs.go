@@ -39,6 +39,7 @@ type installerMessage struct {
 	Line      int    `json:"line"`
 	Statement int    `json:"statement"`
 	End       int    `json:"end"`
+	Comment   string `json:"comment"`
 }
 
 func installerStrings(source string) ([]installerMessage, error) {
@@ -87,8 +88,19 @@ func (env shellEnv) Get(name string) expand.Variable {
 
 func (shellEnv) Each(func(string, expand.Variable) bool) {}
 
+// leading returns the whole source lines between stmt and the code before it, or the earlier
+// output end after, so comments, blank lines, and silent statements read like a top-level gap.
+func leading(source []byte, after int, stmt *syntax.Stmt) string {
+	start := stmt.Pos().Offset()
+	if len(stmt.Comments) > 0 {
+		start = min(start, stmt.Comments[0].Pos().Offset())
+	}
+	_, lines, _ := strings.Cut(string(source[min(after, len(bytes.TrimRight(source[:start], " \t\r\n"))):stmt.Pos().Offset()]), "\n")
+	return lines
+}
+
 func shellStrings(source []byte) ([]installerMessage, error) {
-	tree, err := syntax.NewParser().Parse(bytes.NewReader(source), "")
+	tree, err := syntax.NewParser(syntax.KeepComments(true)).Parse(bytes.NewReader(source), "")
 	if err != nil {
 		return nil, err
 	}
@@ -99,17 +111,42 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 		}
 		return true
 	})
-	var messages []installerMessage
-	// Escapes expanded by echo or printf split lines in place; a physical newline,
-	// carried as NUL, also moves to the next source line.
-	emit := func(value string, line, statement, end int) {
-		for text := range strings.SplitSeq(value, "\n") {
-			messages = append(messages, installerMessage{strings.ReplaceAll(text, "\x00", "\n"), line, statement, end})
-			line += strings.Count(text, "\x00")
+	messages, comment, open, emits := []installerMessage{}, "", false, 0
+	// Escapes expanded by echo or printf split lines in place; a physical newline, carried
+	// as NUL, also moves to the next source line. Unterminated output stays open to continue.
+	emit := func(value string, line int, outer *syntax.CallExpr) {
+		for index, text := range strings.Split(value, "\n") {
+			message := installerMessage{strings.ReplaceAll(text, "\x00", "\n"), line, int(outer.Pos().Offset()), int(outer.End().Offset()), comment}
+			line, comment, emits = line+strings.Count(text, "\x00"), "", emits+min(len(value), 1)
+			if last := len(messages) - 1; index == 0 && open {
+				messages[last].Text, messages[last].End = messages[last].Text+message.Text, message.End
+			} else if open = text != ""; open || index < strings.Count(value, "\n") {
+				messages = append(messages, message)
+			}
 		}
 	}
-	var printCall func(*syntax.CallExpr, shellEnv, int, int, int) error
-	printCall = func(call *syntax.CallExpr, env shellEnv, depth, statement, end int) error {
+	var printCall func(*syntax.CallExpr, shellEnv, int, *syntax.CallExpr) error
+	// Helper output keeps its outer call's statement and the comments above each call reaching its printer.
+	walk := func(root syntax.Node, env shellEnv, depth int, outer *syntax.CallExpr, inherited string) (failure error) {
+		after, count := len(source), emits
+		syntax.Walk(root, func(node syntax.Node) bool {
+			switch node := node.(type) {
+			case *syntax.FuncDecl, *syntax.CmdSubst:
+				return false
+			case *syntax.Stmt:
+				if comment, inherited = inherited, ""; depth > 0 {
+					comment += leading(source, after, node)
+				}
+			case *syntax.CallExpr:
+				if failure = cmp.Or(failure, printCall(node, env, depth, cmp.Or(outer, node))); count < emits {
+					after, count = int(node.End().Offset()), emits
+				}
+			}
+			return failure == nil
+		})
+		return failure
+	}
+	printCall = func(call *syntax.CallExpr, env shellEnv, depth int, outer *syntax.CallExpr) error {
 		if len(call.Args) == 0 {
 			return nil
 		}
@@ -123,63 +160,46 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 		}
 		config := *shellExpansion
 		config.Env = env
-		var args []example
+		args, values, flags := []example{}, []string{}, ""
 		for _, word := range call.Args[1:] {
-			values, err := expand.Fields(&config, word)
+			fields, err := expand.Fields(&config, word)
 			if err != nil {
 				return err
 			}
-			for _, value := range values {
+			for _, value := range fields {
 				line := int(word.Pos().Line())
-				for _, caller := range env.args {
-					if caller.text != "" && strings.Contains(value, caller.text) {
-						line = caller.line
-						break
-					}
+				if caller := slices.IndexFunc(env.args, func(arg example) bool { return arg.text != "" && strings.Contains(value, arg.text) }); caller >= 0 {
+					line = env.args[caller].line
 				}
 				args = append(args, example{strings.ReplaceAll(value, "\n", "\x00"), line})
+				values = append(values, args[len(args)-1].text)
 			}
 		}
 		if function != nil {
-			var failure error
-			syntax.Walk(function.Body, func(node syntax.Node) bool {
-				if _, substitution := node.(*syntax.CmdSubst); substitution {
-					return false
-				}
-				if nested, ok := node.(*syntax.CallExpr); ok && failure == nil {
-					failure = printCall(nested, shellEnv{args, true}, depth+1, statement, end)
-				}
-				return failure == nil
-			})
-			return failure
+			return walk(function.Body.Cmd, shellEnv{args, true}, depth+1, outer, comment)
 		}
-		escaped := false
 		for name == "echo" && len(args) > 0 && len(args[0].text) > 1 && strings.TrimRight(args[0].text, "neE") == "-" {
-			if last := strings.LastIndexAny(args[0].text, "eE"); last >= 0 {
-				escaped = args[0].text[last] == 'e'
-			}
-			args = args[1:]
+			flags, args, values = flags+args[0].text, args[1:], values[1:]
 		}
-		if len(args) == 0 {
+		if len(args) == 0 && name != "echo" {
 			return nil
-		}
-		values := make([]string, len(args))
-		for i, arg := range args {
-			values[i] = arg.text
 		}
 		if name == "echo" {
 			value := strings.Join(values, " ")
-			if escaped {
+			if !strings.Contains(flags, "n") {
+				value += "\n"
+			}
+			// The last of -e and -E wins.
+			if strings.HasSuffix(strings.TrimRight(flags, "-n"), "e") {
 				value, _, err = expand.Format(&config, "%b", []string{value})
 			}
-			emit(value, args[0].line, statement, end)
+			emit(value, append(args, example{line: int(call.Pos().Line())})[0].line, outer)
 			return err
 		}
 		if values[0] == "--" && len(values) > 1 {
 			values, args = values[1:], args[1:]
 		}
-		format, line := values[0], args[0].line
-		values, args = values[1:], args[1:]
+		format, line, values, args := values[0], args[0].line, values[1:], args[1:]
 		for {
 			value, used, err := expand.Format(&config, format, values)
 			if err != nil {
@@ -188,23 +208,14 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 			if used > 0 {
 				line = args[0].line
 			}
-			emit(value, line, statement, end)
+			emit(value, line, outer)
 			values, args = values[used:], args[used:]
 			if used == 0 || len(values) == 0 {
 				return nil
 			}
 		}
 	}
-	syntax.Walk(tree, func(node syntax.Node) bool {
-		switch node.(type) {
-		case *syntax.FuncDecl, *syntax.CmdSubst:
-			return false
-		}
-		if call, ok := node.(*syntax.CallExpr); ok && err == nil {
-			err = printCall(call, shellEnv{}, 0, int(call.Pos().Offset()), int(call.End().Offset()))
-		}
-		return err == nil
-	})
+	err = walk(tree, shellEnv{}, 0, nil, "")
 	return messages, err
 }
 
@@ -258,11 +269,13 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		position := 0
 		for _, message := range messages {
+			// Empty output is a blank line, which ends a marker block.
 			if message.Text == "" {
+				flush("")
 				continue
 			}
-			if message.Statement >= position {
-				gap := strings.Split(string(source[position:message.Statement]), "\n")
+			if message.Statement >= position || message.Comment != "" {
+				gap := strings.Split(cmp.Or(string(source[min(position, message.Statement):message.Statement]), "\n")+message.Comment, "\n")
 				for index, line := range gap {
 					line = strings.Trim(line, " \t\r;&|")
 					switch {
@@ -277,13 +290,8 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 			}
 			position = max(position, message.End)
 			for offset, value := range strings.Split(termtext.StripANSI(message.Text), "\n") {
-				for {
+				for found := true; found; _, value, found = strings.Cut(value, ":") {
 					add(value, message.Line+offset)
-					_, rest, found := strings.Cut(value, ":")
-					if !found {
-						break
-					}
-					value = rest
 				}
 			}
 		}

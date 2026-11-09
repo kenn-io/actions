@@ -48,15 +48,15 @@ function StaticValues($expression, $environment) {
         [pscustomobject]@{ text = $value; line = $line }
     }
 }
-function ReadCalls($root, $environment, $depth, $statement, $end) {
+function ReadCalls($root, $environment, $depth, $statement, $end, $inherited, $after = [int]::MaxValue) {
     foreach ($call in $root.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)) {
-        $parent = $call.Parent
-        while ($parent -and $parent -ne $root -and $parent -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $parent = $parent.Parent }
+        for ($parent = $call.Parent; $parent -and $parent -ne $root -and $parent -isnot [System.Management.Automation.Language.FunctionDefinitionAst]; $parent = $parent.Parent) {}
         if ($parent -is [System.Management.Automation.Language.FunctionDefinitionAst]) { continue }
         $name = $call.GetCommandName()
         if (!$name -or (!$functions.ContainsKey($name) -and $name -notin $printers)) { continue }
-        $outer = if ($statement -ge 0) { $statement } else { [System.Text.Encoding]::UTF8.GetByteCount($source.Substring(0, $call.Extent.StartOffset)) }
-        $last = if ($end -ge 0) { $end } else { [System.Text.Encoding]::UTF8.GetByteCount($source.Substring(0, $call.Extent.EndOffset)) }
+        $outer, $last = if ($statement -ge 0) { $statement, $end } else { foreach ($offset in $call.Extent.StartOffset, $call.Extent.EndOffset) { [System.Text.Encoding]::UTF8.GetByteCount($source.Substring(0, $offset)) } }
+        $code = @($tokens | Where-Object { $_.Extent.EndOffset -le [Math]::Min($after, $call.Extent.StartOffset) -and $_.Kind -notin 'Comment', 'NewLine', 'LineContinuation' })[-1]
+        $comment, $inherited = ($inherited + $(foreach ($token in @($tokens | Where-Object { $statement -ge 0 -and $_.Kind -eq 'NewLine' -and $_.Extent.StartOffset -ge $code.Extent.EndOffset -and $_.Extent.EndOffset -le $call.Extent.StartOffset })[0]) { $source.Substring($token.Extent.EndOffset, $call.Extent.StartOffset - $token.Extent.EndOffset) })), ''
         if ($functions.ContainsKey($name)) {
             if ($depth -ge $functions.Count) { throw "recursive printer helper $name" }
             $function = $functions[$name]
@@ -75,7 +75,7 @@ function ReadCalls($root, $environment, $depth, $statement, $end) {
                 }
                 $bound[$parameter] = @(StaticValues $element $environment)
             }
-            ReadCalls $function.Body $bound ($depth + 1) $outer $last
+            ReadCalls $function.Body $bound ($depth + 1) $outer $last $comment | ForEach-Object { $_; $after = $call.Extent.EndOffset }
             continue
         }
         $bound = if ($name -eq 'Write-Host') { [System.Management.Automation.Language.StaticParameterBinder]::BindCommand($call, $true).BoundParameters }
@@ -88,8 +88,8 @@ function ReadCalls($root, $environment, $depth, $statement, $end) {
             $separator = if ($bound.ContainsKey('Separator')) { (StaticValues $bound['Separator'].Value $environment).text -join ' ' } else { ' ' }
             $parts = @([pscustomobject]@{ text = $parts.text -join $separator; line = $parts[0].line })
         }
-        foreach ($part in $parts) { [pscustomobject]@{ text = $part.text; line = $part.line; statement = $outer; end = $last } }
+        foreach ($part in $parts) { [pscustomobject]@{ text = $part.text; line = $part.line; statement = $outer; end = $last; comment = $comment }; $comment, $after = '', $call.Extent.EndOffset }
     }
 }
-$messages = @(ReadCalls $tree @{} 0 -1 -1)
+$messages = @(ReadCalls $tree @{} 0 -1 -1 '')
 ConvertTo-Json -InputObject $messages -Compress
