@@ -34,7 +34,7 @@ func commands(line string) ([][]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if value == "[flags]" || value == "[command]" {
+		if value == "<command>" || value == "<subcommand>" || value == "[flags]" || value == "[command]" {
 			replacement = ""
 		} else if line[start] == '[' {
 			continue
