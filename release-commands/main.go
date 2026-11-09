@@ -69,8 +69,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			continue
 		}
 		for _, block := range blocks {
-			blockFailed, blockChecked := false, false
-			for _, example := range block.commands {
+			blockFailed, firstChecked := false, len(block.commands)
+			for index, example := range block.commands {
 				problem := ""
 				invocations, err := commands(example.text)
 				name := commandName(example.text)
@@ -85,7 +85,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 					if !slices.Contains(*binaries, args[0]) {
 						continue
 					}
-					blockChecked = true
+					firstChecked = min(firstChecked, index)
 					binary := paths[args[0]]
 					if binary == "" {
 						problem = fmt.Sprintf("%s: not in %s", args[0], filepath.Base(*archive))
@@ -102,8 +102,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 					failed = true
 				}
 			}
-			if blockChecked && !blockFailed && block.marker != "" {
-				first := block.commands[0]
+			if firstChecked < len(block.commands) && !blockFailed && block.marker != "" {
+				first := block.commands[firstChecked]
 				fmt.Fprintf(out, "%s:%d: passes; remove %s: %s\n", file, first.line, block.marker, strings.TrimSpace(first.text[:commentIndex(first.text)]))
 			}
 		}

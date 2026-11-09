@@ -72,7 +72,7 @@ func TestReleaseCommands(t *testing.T) {
 		{"version output beside command", ".md", "```text\nstub v0.38.0 (commit abc, built 2026-07-13T15:37:17Z)\nstub nope\n```", `v1.0.0 has no command "nope"`, 3, []string{"stub"}},
 		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", 1, []string{"stub", "stub-helper"}},
 		{"marked output only", ".md", "<!-- release-commands: expected-failure -->\n\n`stub started (pid 12)`", "", 0, []string{"stub"}},
-		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\n```", "passes; remove expected-failure marker", 4, []string{"stub"}},
+		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\nstub plain\n```", "passes; remove expected-failure marker: stub run file", 5, []string{"stub"}},
 		{"shell marker hint", ".sh", "echo 'stub nope'", "add # release-commands: expected-failure", 1, []string{"stub"}},
 		{"powershell marker hint", ".ps1", "Write-Host 'stub nope'", "add # release-commands: expected-failure", 1, []string{"stub"}},
 		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, 1, []string{"stub"}},
