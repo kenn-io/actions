@@ -56,7 +56,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	for _, file := range flags.Args() {
 		markerHint := "# release-commands: expected-failure"
 		noteHint := "# " + note
-		if filepath.Ext(file) == ".md" {
+		if slices.Contains([]string{".md", ".mdx", ".markdown"}, filepath.Ext(file)) {
 			markerHint = "<!-- release-commands: expected-failure -->"
 			noteHint = note
 		}

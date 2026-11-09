@@ -85,7 +85,6 @@ func TestReleaseCommands(t *testing.T) {
 		{"shell marker hint", ".sh", "echo 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, 1, 0, []string{"stub"}},
 		{"powershell marker hint", ".ps1", "Write-Host 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, 1, 0, []string{"stub"}},
 		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, 1, 0, []string{"stub"}},
-		{"installer syntax error", ".sh", "echo 'stub run", "cannot read installer messages", 0, 0, []string{"stub"}},
 		{"marked assigned missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`MODE=\"a b\" stub-helper started (pid 12)`", "", 0, 0, []string{"stub", "stub-helper"}},
 		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for unreleased commands, add "Not in the latest release yet" before the block; for output samples, add <!-- release-commands: expected-failure -->`, 3, 0, []string{"stub"}},
 		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0, 0, []string{"stbu"}},
@@ -93,6 +92,13 @@ func TestReleaseCommands(t *testing.T) {
 		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", 0, 0, []string{"stub", "stub-helper"}},
 		{"unreleased", ".md", "Not in the latest release yet\n\n`stub nope`", "", 0, 0, []string{"stub"}},
 		{"passing marker", ".md", "Not in the latest release yet\n\n`stub run file`", "passes; remove unreleased note", 3, 0, []string{"stub"}},
+		{"printf released command", ".sh", `printf 'stub run file\n'`, "", 0, 0, []string{"stub"}},
+		{"printf unknown command", ".sh", "# installer\nprintf 'stub nope\\n'", `has no command "nope"`, 2, 0, []string{"stub"}},
+		{"echo escaped command", ".sh", `echo -e "\n\tstub nope"`, `has no command "nope"`, 1, 0, []string{"stub"}},
+		{"powershell escaped command", ".ps1", "Write-Host \"`n`tstub nope\"", `has no command "nope"`, 1, 0, []string{"stub"}},
+		{"mdx marker hint", ".mdx", "`stub nope`", `for output samples, add <!-- release-commands: expected-failure -->`, 1, 0, []string{"stub"}},
+		{"markdown command", ".markdown", "`stub nope`", `has no command "nope"`, 1, 0, []string{"stub"}},
+		{"unsupported extension", ".txt", "stub nope", "unsupported file type", 0, 0, []string{"stub"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "example"+test.ext)
