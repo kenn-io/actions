@@ -26,6 +26,8 @@ type exampleBlock struct {
 
 const note = "Not in the latest release yet"
 
+var markdownExtensions = []string{".md", ".mdx", ".markdown"}
+
 var (
 	powershellCalls     = regexp.MustCompile(`(?im)(?:^|[;{}|])[ \t]*([\w-]+)[ \t]+`)
 	powershellFunctions = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
@@ -190,7 +192,7 @@ func visible(node ast.Node, source []byte) string {
 }
 
 func examples(file string, source []byte, binaries []string) ([]exampleBlock, error) {
-	markdown := slices.Contains([]string{".md", ".mdx", ".markdown"}, filepath.Ext(file))
+	markdown := slices.Contains(markdownExtensions, filepath.Ext(file))
 	var result []exampleBlock
 	var current exampleBlock
 	add := func(value string, line int) bool {

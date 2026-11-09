@@ -53,11 +53,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	cache := helpCache{}
 	failed := false
 	for _, file := range flags.Args() {
-		data, err := os.ReadFile(file)
-		var blocks []exampleBlock
-		if err == nil {
-			blocks, err = examples(file, data, *binaries)
-		}
+		blocks, err := fileExamples(file, *binaries)
 		if err != nil {
 			fmt.Fprintln(errOut, err)
 			failed = true
@@ -100,4 +96,17 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// fileExamples reads file's examples; a listed installer must yield at least one.
+func fileExamples(file string, binaries []string) ([]exampleBlock, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	blocks, err := examples(file, data, binaries)
+	if err == nil && len(blocks) == 0 && !slices.Contains(markdownExtensions, filepath.Ext(file)) {
+		return nil, fmt.Errorf("%s: no commands for %s", file, strings.Join(binaries, ", "))
+	}
+	return blocks, err
 }
