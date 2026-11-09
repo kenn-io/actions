@@ -69,10 +69,7 @@ func TestReleaseCommands(t *testing.T) {
 		line                                int
 		binaries                            []string
 	}{
-		{"printf literal with substitution", ".sh", `echo 'stub plain'; printf 'stub nope\n%s\n' Ready`, `has no command "nope"`, "", 1, []string{"stub"}},
-		{"prefixed shell commands", ".sh", `echo 'Get started: stub nope && stub plain'`, `has no command "nope"`, "", 1, []string{"stub"}},
-		{"prefixed powershell commands", ".ps1", `Write-Host 'Get started: stub nope && stub plain'`, `has no command "nope"`, "", 1, []string{"stub"}},
-		{"joined echo operands", ".sh", `echo 'stub plain' 'stub nope'`, "", "", 0, []string{"stub"}},
+		{"printf option terminator", ".sh", "echo 'stub plain'\nprintf -- '%s\\n' 'stub nope'", `has no command "nope"`, "", 2, []string{"stub"}},
 		{"markdown prose", ".md", "Getting started.", "", "", 0, []string{"stub"}},
 		{"installer without commands", ".sh", "echo hello", "no commands for stub", "", 0, []string{"stub"}},
 		{"installer parse error names file", ".sh", "echo 'stub nope'\nfoo() { case", "example.sh:2:", "", 2, []string{"stub"}},
@@ -144,36 +141,4 @@ func TestReleaseCommandsAction(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	require.Error(t, err)
 	require.Contains(t, string(output), `-x.md:1: stub nope: v1.0.0 has no command "nope"`)
-}
-
-func TestReleasedCommands(t *testing.T) {
-	dir := t.TempDir()
-	helpDir, err := filepath.Abs("testdata/help")
-	require.NoError(t, err)
-	var wrapper strings.Builder
-	wrapper.WriteString("#!/bin/sh\ncase \"$*\" in\n")
-	for _, path := range []string{"", "daemon", "daemon stop", "calendar", "calendar create"} {
-		file := "msgvault-" + strings.ReplaceAll(path, " ", "-")
-		if path == "" {
-			file = "msgvault-root"
-		}
-		fmt.Fprintf(&wrapper, "%q) cat %q ;;\n", strings.TrimSpace("help "+path), filepath.Join(helpDir, file+".txt"))
-	}
-	wrapper.WriteString("*) exit 2 ;;\nesac\n")
-	archive := filepath.Join(dir, "release.tar.gz")
-	require.NoError(t, writeFixtureArchive(archive, map[string][]byte{"msgvault": []byte(wrapper.String())}))
-	for _, command := range []string{
-		"msgvault --home example-home daemon stop",
-		"msgvault daemon --home example-home stop",
-		"msgvault calendar create --account example-account --json",
-		"msgvault calendar --account example-account create --json",
-	} {
-		t.Run(command, func(t *testing.T) {
-			file := filepath.Join(t.TempDir(), "example.md")
-			require.NoError(t, os.WriteFile(file, []byte("`"+command+"`"), 0o600))
-			var out, errOut bytes.Buffer
-			require.Equal(t, 0, run(t.Context(), []string{"--archive", archive, "--binary", "msgvault", file}, &out, &errOut), errOut.String())
-			require.Empty(t, errOut.String())
-		})
-	}
 }

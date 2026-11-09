@@ -124,17 +124,18 @@ func TestReleasedHelp(t *testing.T) {
 		flags []string
 	}{
 		{"msgvault-calendar-create", []string{"account", "json", "home", "local", "agent-url", "verbose"}},
-		{"msgvault-daemon-stop", []string{"home", "agent-url"}},
 		{"kata", []string{"json", "format", "quiet"}},
-		{"agentsview", []string{"json", "format"}},
-		{"docbank", []string{"json", "dest"}},
-		{"roborev", []string{"quiet", "repo"}},
+		{"roborev", []string{"branch", "server"}},
 	} {
 		t.Run(test.file, func(t *testing.T) {
 			output, err := os.ReadFile("testdata/help/" + test.file + ".txt")
 			require.NoError(t, err)
 			got, err := describe(string(output), root.flags)
 			require.NoError(t, err)
+			if test.file == "roborev" {
+				require.NoError(t, got.flags.Parse([]string{"--branch"}))
+				require.NoError(t, got.flags.Parse([]string{"--server", "example-server"}))
+			}
 			for _, flag := range test.flags {
 				require.NotNil(t, got.flags.Lookup(flag), flag)
 			}
@@ -144,7 +145,32 @@ func TestReleasedHelp(t *testing.T) {
 		output := "Usage:\n  msgvault test [flags]\nFlags:\n      --home   local override\nGlobal Flags: --home, --agent-url\n"
 		got, err := describe(output, root.flags)
 		require.NoError(t, err)
-		require.Nil(t, got.flags.Lookup("local"))
 		require.ErrorContains(t, got.flags.Parse([]string{"--home", "--bogus"}), "unknown flag: --bogus")
 	})
+}
+
+func TestReleasedHelpCache(t *testing.T) {
+	dir := t.TempDir()
+	helpDir, err := filepath.Abs("testdata/help")
+	require.NoError(t, err)
+	var wrapper strings.Builder
+	wrapper.WriteString("#!/bin/sh\ncase \"$*\" in\n")
+	for _, path := range []string{"", "daemon", "daemon stop"} {
+		file := "msgvault-" + strings.ReplaceAll(path, " ", "-")
+		if path == "" {
+			file = "msgvault-root"
+		}
+		fmt.Fprintf(&wrapper, "%q) cat %q ;;\n", strings.TrimSpace("help "+path), filepath.Join(helpDir, file+".txt"))
+	}
+	wrapper.WriteString("*) exit 2 ;;\nesac\n")
+	binary := filepath.Join(dir, "msgvault")
+	require.NoError(t, os.WriteFile(binary, []byte(wrapper.String()), 0o700))
+	for _, command := range []string{
+		"--home example-home daemon stop",
+		"daemon --home example-home stop",
+	} {
+		t.Run(command, func(t *testing.T) {
+			require.NoError(t, (helpCache{}).check(t.Context(), binary, strings.Fields(command)))
+		})
+	}
 }

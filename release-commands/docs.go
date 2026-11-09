@@ -230,20 +230,18 @@ func shellOutput(words []string) (string, bool) {
 		}
 		return output, true
 	case "printf":
-		if args[0] == "-v" {
+		format, args := args[0], args[1:]
+		if format == "--" && len(args) > 0 {
+			format, args = args[0], args[1:]
+		} else if format != "-" && strings.HasPrefix(format, "-") {
 			return "", false
 		}
-		format, args := args[0], args[1:]
 		var output strings.Builder
 		for {
 			rendered, used, err := expand.Format(nil, format, args)
-			if err != nil {
-				return "", false
-			}
 			output.WriteString(rendered)
-			args = args[used:]
-			if used == 0 || len(args) == 0 {
-				return output.String(), true
+			if args = args[used:]; err != nil || used == 0 || len(args) == 0 {
+				return output.String(), err == nil
 			}
 		}
 	}
