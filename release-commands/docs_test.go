@@ -7,6 +7,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCompleteExamples(t *testing.T) {
+	for _, test := range []struct {
+		name, ext, source, command, finding string
+		line                                int
+	}{
+		{"echo fragments", ".sh", "echo -n 'stub '; echo 'nope'", "stub nope", `has no command "nope"`, 1},
+		{"printf fragments", ".sh", "printf 'stub '; printf 'nope'", "stub nope", `has no command "nope"`, 1},
+		{"helper fragments", ".sh", "info() { printf '%s' \"$1\"; }; info 'stub '; info 'nope'", "stub nope", `has no command "nope"`, 1},
+		{"quoted newline", ".md", "```sh\nstub run 'hello\n  world'\n```", "stub run 'hello\n  world'", "", 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			blocks, err := examples("example"+test.ext, []byte(test.source), []string{"stub"})
+			require.NoError(t, err)
+			require.Len(t, blocks, 1)
+			require.Len(t, blocks[0].commands, 1)
+			got := blocks[0].commands[0]
+			require.Equal(t, test.command, got.text)
+			invocations, err := commands(got.text)
+			require.NoError(t, err)
+			require.Len(t, invocations, 1)
+			err = check(t.Context(), fixtureBinary, invocations[0][1:])
+			if test.finding == "" {
+				require.NoError(t, err)
+				require.Equal(t, []string{"stub", "run", "hello\n  world"}, invocations[0])
+			} else {
+				require.ErrorContains(t, err, test.finding)
+			}
+			require.Equal(t, test.line, got.line)
+		})
+	}
+}
+
 func TestExamples(t *testing.T) {
 	for _, test := range []struct {
 		name, ext, source, marker string

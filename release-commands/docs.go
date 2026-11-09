@@ -95,13 +95,28 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 		return true
 	})
 	var messages []installerMessage
+	var pending installerMessage
+	flush := func() {
+		if pending.Text != "" {
+			pending.Text = strings.ReplaceAll(pending.Text, "\x00", "\n")
+			messages = append(messages, pending)
+		}
+		pending = installerMessage{}
+	}
 	// Escaped output newlines split messages; NULs mark physical source newlines.
 	emit := func(value string, line int) {
-		for text := range strings.SplitSeq(value, "\n") {
-			if text != "" {
-				messages = append(messages, installerMessage{strings.ReplaceAll(text, "\x00", "\n"), line})
+		for {
+			text, rest, newline := strings.Cut(value, "\n")
+			if pending.Text == "" {
+				pending.Line = line
 			}
+			pending.Text += text
 			line += strings.Count(text, "\x00")
+			if !newline {
+				break
+			}
+			flush()
+			value = rest
 		}
 	}
 	var printCall func(*syntax.CallExpr, shellEnv, int) error
@@ -188,6 +203,7 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 		}
 	}
 	err = walk(tree, shellEnv{}, 0)
+	flush()
 	return messages, err
 }
 
@@ -321,10 +337,18 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 							value := strings.TrimRight(string(segment.Bytes(source)), "\r\n")
 							if pending == "" {
 								start = bytes.Count(source[:segment.Start], []byte{'\n'}) + 1
+								pending = strings.TrimLeft(value, " \t")
+							} else if strings.HasSuffix(pending, "\n") {
+								pending += value
+							} else {
+								pending += strings.TrimSpace(value)
 							}
-							pending += strings.TrimSpace(value)
 							if !comment(pending) && (len(pending)-len(strings.TrimRight(pending, "\\")))%2 == 1 {
 								pending = strings.TrimSuffix(pending, "\\") + " "
+								continue
+							}
+							if _, err := commands(pending); syntax.IsIncomplete(err) {
+								pending += "\n"
 								continue
 							}
 							if index+1 < len(segments) {

@@ -30,6 +30,8 @@ jobs:
           asset: kata_*[0-9]_linux_amd64.tar.gz
 ```
 
+Run the action in its own job. It installs its own Go version.
+
 Reference the action at `@main`, and pin it with the calling repository's `actions.lock`. List each file and binary on its own line. The asset glob must match exactly one `.tar.gz`, excluding alternate builds such as `_homebrew_` archives. `repository` defaults to the calling repository. `github-token` defaults to the job token; private releases need a token that can read them.
 
 A flag named alone or with an empty assignment checks its spelling without validating a value.
