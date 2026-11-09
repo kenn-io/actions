@@ -58,8 +58,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			blockFailed, firstChecked := false, len(block.commands)
 			for index, example := range block.commands {
 				problem := ""
-				invocations, _ := commands(example.text)
-				for _, args := range invocations {
+				for _, args := range example.invocations {
 					if !slices.Contains(*binaries, args[0]) {
 						continue
 					}

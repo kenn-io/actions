@@ -16,8 +16,9 @@ import (
 )
 
 type example struct {
-	text string
-	line int
+	text        string
+	line        int
+	invocations [][]string
 }
 type exampleBlock struct {
 	commands []example
@@ -64,7 +65,7 @@ func installerStrings(source []byte, powershell bool) ([]example, error) {
 		text := arg[1]
 		value := text[1 : len(text)-1]
 		if text[0] == '\'' || !strings.ContainsAny(value, "$`") {
-			messages = append(messages, example{value, bytes.Count(source[:match[3]], []byte{'\n'}) + 1})
+			messages = append(messages, example{text: value, line: bytes.Count(source[:match[3]], []byte{'\n'}) + 1})
 		}
 	}
 	return messages, nil
@@ -183,7 +184,7 @@ func shellStrings(source []byte) ([]example, error) {
 				values = strings.Split(strings.NewReplacer(`\\`, `\`, `\n`, "\n", `\t`, "\t").Replace(value), "\n")
 			}
 			for _, value := range values {
-				messages = append(messages, example{value, int(arg.Pos().Line())})
+				messages = append(messages, example{text: value, line: int(arg.Pos().Line())})
 			}
 		}
 		return false
@@ -212,7 +213,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
 		if err == nil && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
-			current.commands = append(current.commands, example{text: value, line: line})
+			current.commands = append(current.commands, example{text: value, line: line, invocations: invocations})
 			return true
 		}
 		return false
