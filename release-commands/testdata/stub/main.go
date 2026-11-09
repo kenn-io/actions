@@ -10,6 +10,7 @@ import (
 func main() {
 	root := &cobra.Command{Use: filepath.Base(os.Args[0]), SilenceErrors: true, SilenceUsage: true}
 	root.PersistentFlags().String("config", "", "Config path")
+	root.PersistentFlags().CountP("verbose", "v", "Verbosity")
 	group := &cobra.Command{Use: "group", Short: "Grouped commands", Run: func(cmd *cobra.Command, _ []string) { _ = cmd.Help() }}
 	group.Flags().Bool("local", false, "Parent flag")
 	child := &cobra.Command{Use: "child <id>", Aliases: []string{"alias"}, Short: "Read an ID", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}

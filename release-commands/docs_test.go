@@ -11,6 +11,13 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []exampleBlock
 	}{
+		{"shell adjacent operator", ".sh", `true&&echo 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"shell redirect filename", ".sh", `echo 'ready' > 'stub nope'`, nil},
+		{"shell helper does not forward", ".sh", `check() { echo 'ready'; test -n "$1"; }; check 'stub nope'`, nil},
+		{"shell helper forwards second argument", ".sh", `info() { echo "$2"; }; info 'stub nope' 'stub run'`, []exampleBlock{{commands: []example{{"stub run", 1}}}}},
+		{"console commands and output", ".md", "```console\n$ stub run file\nstub nope\n$ stub group child ID \\\n  --bogus\nstub started\n```", []exampleBlock{{commands: []example{{"stub run file", 2}, {"stub group child ID  --bogus", 4}}}}},
+		{"installer embedded quoted instruction", ".sh", `echo "Run 'stub nope' to get started"`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
+		{"installer embedded instruction", ".sh", `echo 'Next, run stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"shell conditional output", ".sh", `true && echo 'stub nope'`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"shell inline else", ".sh", `if x; then echo 'ready'; else echo 'stub nope'; fi`, []exampleBlock{{commands: []example{{"stub nope", 1}}}}},
 		{"shell conditional assignment", ".sh", `echo 'ready' && msg='stub nope'`, nil},

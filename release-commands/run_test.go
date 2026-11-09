@@ -34,6 +34,7 @@ func TestDescribe(t *testing.T) {
 func TestCheck(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, arguments, finding string }{
+		{"count flag then command", "-v nope", `has no command "nope"`},
 		{"lowercase symbolic child", "group $child", ""},
 		{"lowercase symbolic argument flag", "plain $path --bogus", "unknown flag: --bogus"},
 		{"symbolic child flag", "group <cmd> --child-only", ""},

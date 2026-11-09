@@ -26,33 +26,32 @@ type usage struct {
 }
 
 // NUL separates arguments because executable paths and process arguments cannot contain it.
-type helpCache map[string]string
+type helpCache map[string]usage
 
 func (cache helpCache) help(ctx context.Context, binary string, path []string) (usage, error) {
 	key := strings.Join(append([]string{binary}, path...), "\x00")
-	output, found := cache[key]
-	if !found {
-		home, err := os.MkdirTemp("", "release-help-*")
-		if err != nil {
-			return usage{}, err
-		}
-		defer os.RemoveAll(home)
-		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, binary, append([]string{"help"}, path...)...)
-		cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
-		data, err := cmd.CombinedOutput()
-		if err != nil {
-			return usage{}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(data)))
-		}
-		output = string(data)
+	if cached, found := cache[key]; found {
+		return cached, nil
 	}
-	u, err := describe(output)
-	if err == nil {
-		cache[key] = output
+	home, err := os.MkdirTemp("", "release-help-*")
+	if err != nil {
+		return usage{}, err
 	}
+	defer os.RemoveAll(home)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, append([]string{"help"}, path...)...)
+	cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
+	data, err := cmd.CombinedOutput()
+	if err != nil {
+		return usage{}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(data)))
+	}
+	u, err := describe(string(data))
 	if len(u.path) > len(path)+1 {
 		u.path, u.arguments = u.path[:len(path)+1], true
+	}
+	if err == nil {
+		cache[key] = u
 	}
 	return u, err
 }
@@ -135,7 +134,7 @@ func describe(output string) (usage, error) {
 				continue
 			}
 			u.flags.StringP(name, match[1], "", "")
-			if match[3] == "" || strings.Contains(match[3], "[=") {
+			if match[3] == "" || match[3] == "count" || strings.Contains(match[3], "[=") {
 				u.flags.Lookup(name).NoOptDefVal = "true"
 			}
 		}
