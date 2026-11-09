@@ -24,8 +24,7 @@ func TestDescribe(t *testing.T) {
 		arguments                           bool
 		parse                               [][]string
 	}{
-		// Roborev cmd/roborev/help_commands_test.go and help_root.go produce this compact help.
-		{name: "roborev compact global flags", output: "Usage:\n  roborev show [flags]\nGlobal: --server <string>, -v/--verbose. Details: roborev --help\n", path: []string{"roborev", "show"}, arguments: true, parse: [][]string{{"--server", "example", "-v"}}},
+		{name: "roborev compact global flags", file: "roborev-v0.75.0-show", path: []string{"roborev", "show"}, arguments: true, parse: [][]string{{"--server", "example", "-v"}}},
 		{name: "prose flag absent", output: "      --ghost  prose\n\nUsage:\n  prose [flags]\nFlags:\n  -h, --help  help for prose\n", absent: "ghost", path: []string{"prose"}, arguments: true},
 		{name: "wrapped description absent", output: "Usage:\n  stub group child <id> [flags]\nFlags:\n  -n, --limit int   Limit\n                    --description-only  continuation\n", absent: "description-only", path: []string{"stub", "group", "child"}, arguments: true},
 		{name: "unsupported flag section", output: "Usage:\n  stub [flags]\nPersistent Flags:\n      --quiet   Quiet output\n", finding: "unsupported help: unrecognized flag section"},
