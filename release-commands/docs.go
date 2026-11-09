@@ -34,6 +34,8 @@ var (
 	powershellFunctions = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
 	powershellHelpers   = regexp.MustCompile(`(?im)^[ \t]*function\s+([\w-]+)\((?:\[string\])?(\$\w+)\)[ \t]*\{[ \t]*(write-[\w-]+)[ \t]+(\$\w+)(?:[ \t][^{}\r\n]*)?\}`)
 	powershellArguments = regexp.MustCompile(`^[ \t]*('(?:''|[^'\r\n])*'|"[^"\r\n]*")`)
+	shellEscape         = regexp.MustCompile(`\\(?:0[0-7]{0,3}|[1-7][0-7]{0,2}|.)`)
+	printfConversion    = regexp.MustCompile(`\\.|%[-+ 0-9]*[[:alpha:]%]`)
 )
 
 // installerStrings reads static, single-line output and one-step message helpers.
@@ -236,8 +238,7 @@ func shellOutput(words []string) (string, bool) {
 		}
 		output := strings.Join(args, " ")
 		if escapes {
-			rendered, _, err := expand.Format(nil, strings.ReplaceAll(output, "%", "%%"), nil)
-			return rendered, err == nil
+			output, _ = shellEscapes(output, true)
 		}
 		return output, true
 	case "printf":
@@ -249,14 +250,53 @@ func shellOutput(words []string) (string, bool) {
 		}
 		var output strings.Builder
 		for {
-			rendered, used, err := expand.Format(nil, format, args)
+			rendering, values, index, stopped := format, slices.Clone(args), 0, false
+			for _, span := range printfConversion.FindAllStringIndex(format, -1) {
+				conversion := format[span[0]:span[1]]
+				if conversion[0] != '%' || conversion[len(conversion)-1] == '%' {
+					continue
+				}
+				if conversion[len(conversion)-1] == 'b' && index < len(values) {
+					values[index], stopped = shellEscapes(values[index], false)
+					rendering = rendering[:span[1]-1] + "s" + rendering[span[1]:]
+					if stopped {
+						rendering, values = rendering[:span[1]], values[:index+1]
+						break
+					}
+				}
+				index++
+			}
+			rendered, used, err := expand.Format(nil, rendering, values)
 			output.WriteString(rendered)
-			if args = args[used:]; err != nil || used == 0 || len(args) == 0 {
+			if err != nil || stopped || used == 0 || used == len(args) {
 				return output.String(), err == nil
 			}
+			args = args[used:]
 		}
 	}
 	return "", false
+}
+
+// echo -e requires a leading zero for octal; both printers stop at an unescaped \c.
+func shellEscapes(value string, echo bool) (string, bool) {
+	stopped := false
+	for _, span := range slices.Backward(shellEscape.FindAllStringIndex(value, -1)) {
+		escape := value[span[0]:span[1]]
+		switch {
+		case escape == `\c`:
+			value, stopped = value[:span[0]], true
+		case echo && escape[1] >= '1' && escape[1] <= '7':
+			value = value[:span[0]] + `\` + value[span[0]:]
+		case escape[1] >= '0' && escape[1] <= '7':
+			n := 0
+			for _, digit := range strings.TrimPrefix(escape[1:], "0") {
+				n = n*8 + int(digit-'0')
+			}
+			value = value[:span[0]] + fmt.Sprintf(`\%03o`, byte(n)) + value[span[1]:]
+		}
+	}
+	rendered, _, _ := expand.Format(nil, value, nil)
+	return rendered, stopped
 }
 
 // visible returns the text a reader sees in node, so emphasis around the note still counts.
@@ -268,6 +308,9 @@ func visible(node ast.Node, source []byte) string {
 		}
 		return ast.WalkContinue, nil
 	})
+	if _, text, ok := strings.Cut(words.String(), "]"); ok && strings.HasPrefix(words.String(), "[!") {
+		return strings.TrimSpace(text)
+	}
 	return words.String()
 }
 

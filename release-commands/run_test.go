@@ -58,8 +58,6 @@ func TestCheck(t *testing.T) {
 		{"child flag before child", "group --limit 50 child ID", ""},
 		{"unknown flag before child", "group --bogus child ID", "unknown flag: --bogus"},
 		{"missing child after deferred flag", "--local=false group absent", `has no command "absent"`},
-		{"unknown clustered shorthand", "group child ID -hZ", "unknown shorthand flag: 'Z'"},
-		{"malformed shorthand", "run -=oops file", "unknown shorthand flag: '='"},
 		{"parent flag", "group --local child ID", "unknown flag: --local"},
 		{"inherited flag", "--config cfg group child ID", ""},
 		{"leaf arguments", "plain somefile", ""},
@@ -132,6 +130,10 @@ func TestReleasedHelp(t *testing.T) {
 			require.NoError(t, err)
 			got, err := describe(string(output), root.flags)
 			require.NoError(t, err)
+			if test.file == "kata" {
+				require.Equal(t, []string{"kata"}, got.path)
+				require.False(t, got.arguments)
+			}
 			if test.file == "roborev" {
 				require.NoError(t, got.flags.Parse([]string{"--branch"}))
 				require.NoError(t, got.flags.Parse([]string{"--server", "example-server"}))

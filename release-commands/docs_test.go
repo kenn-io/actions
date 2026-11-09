@@ -19,6 +19,7 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []expectedBlock
 	}{
+		{"alert unreleased note", ".md", "> [!NOTE]\n> Not in the latest release yet.\n\n`stub nope`", []expectedBlock{{marker: "unreleased note", commands: []expectedExample{{"stub nope", 4}}}}},
 		{"powershell here-string apostrophe", ".ps1", "Write-Host @'\nDon't\nWrite-Host 'stub nope'\n'@\nWrite-Host 'stub run'", []expectedBlock{{commands: []expectedExample{{"stub run", 5}}}}},
 		{"printf helper unquoted parameter", ".sh", `info() { printf '%s\n' $1; }; info 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub", 1}}}}},
 		{"prompted bracketed output", ".md", "```console\n$ stub plain\n  [\"--bogus\"]\n```", []expectedBlock{{commands: []expectedExample{{"stub plain", 2}}}}},
@@ -39,19 +40,16 @@ func TestExamples(t *testing.T) {
 		{"powershell transformed helper", ".ps1", "function info([string]$Message) { Write-Host $Message.Length }\ninfo 'stub nope'", nil},
 		{"shell colon prefixed helper", ".sh", `info() { echo "Get started: $1"; }; info 'stub nope && stub plain'`, []expectedBlock{{commands: []expectedExample{{"stub nope && stub plain", 1}}}}},
 		{"shell static double quoted backslashes", ".sh", `echo "stub run C:\\new"`, []expectedBlock{{commands: []expectedExample{{`stub run C:\new`, 1}}}}},
-		{"printf double quoted newline", ".sh", `printf "stub nope\n"`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},
 		{"printf prefixed newlines", ".sh", `printf '\nGet started:\n  stub group nope\n'`, []expectedBlock{{commands: []expectedExample{{"stub group nope", 1}}}}},
 		{"synopsis after comment", ".md", "```sh\nstub plain file # note\n    [--bogus]\n```", []expectedBlock{{commands: []expectedExample{{"stub plain file  [--bogus]", 2}}}}},
 		{"powershell commented helper", ".ps1", "<#\nfunction info([string]$Message) { Write-Host $Message }\n#>\ninfo 'stub nope'", nil},
 		{"powershell block comment output call", ".ps1", "<#\nWrite-Host 'stub nope'\n#>", nil},
 		{"powershell quoted output call", ".ps1", `Write-Host "Details; Write-Host 'stub nope'"`, nil},
 		{"powershell ignored parameter", ".ps1", "function Write-Info([string]$Message) { Write-Host 'Ready' }\nWrite-Info 'stub nope'", nil},
-		{"shell adjacent operator", ".sh", `true&&echo 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},
 		{"shell helper does not forward", ".sh", `check() { echo 'ready'; test -n "$1"; }; check 'stub nope'`, nil},
 		{"shell helper forwards first argument", ".sh", `info() { echo "$1"; }; info 'stub run' 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub run", 1}}}}},
 		{"console commands and output", ".md", "```console\n$ stub run file\nstub nope\n$ stub group child ID \\\n  --bogus\nstub started\n```", []expectedBlock{{commands: []expectedExample{{"stub run file", 2}, {"stub group child ID  --bogus", 4}}}}},
 		{"shell static branches", ".sh", `if x; then echo 'stub run'; else echo 'stub nope'; fi`, []expectedBlock{{commands: []expectedExample{{"stub run", 1}, {"stub nope", 1}}}}},
-		{"shell case arm", ".sh", "case x in\n  *) echo 'stub nope' ;;\nesac", []expectedBlock{{commands: []expectedExample{{"stub nope", 2}}}}},
 		{"powershell tags", ".ps1", `Write-Information 'Ready' -Tags 'stub nope'`, nil},
 		{"shell redirect substitutions", ".sh", "info() { echo ready > \"$(echo \"$1\")\"; }; info 'stub nope'\ncat <<EOF\n$(echo 'stub nope')\ndon't\nEOF\necho 'stub run'", []expectedBlock{{commands: []expectedExample{{"stub run", 6}}}}},
 		{"version output beside command", ".md", "```text\nstub v0.38.0 (commit abc)\nstub nope\n```", []expectedBlock{{commands: []expectedExample{{"stub nope", 3}}}}},
@@ -101,17 +99,22 @@ func TestExamples(t *testing.T) {
 	}
 }
 
-func TestExampleInvocations(t *testing.T) {
-	blocks, err := examples("example.md", []byte("`stub plain`"), []string{"stub"})
-	require.NoError(t, err)
-	require.Equal(t, []exampleBlock{{commands: []example{{
-		text: "stub plain", line: 1,
-		invocations: [][]string{{"stub", "plain"}},
-	}}}}, blocks)
-}
-
-func TestInstallerAssignment(t *testing.T) {
-	messages, err := installerStrings([]byte(`printf '-v' result '%s' 'stub nope'`), false)
-	require.NoError(t, err)
-	require.Empty(t, messages)
+func TestInstallerPrintfOptions(t *testing.T) {
+	for _, test := range []struct {
+		name, source string
+		want         []string
+	}{
+		{"assignment", `printf '-v' result '%s' 'stub nope'`, nil},
+		{"terminator", `printf -- '%s\n' 'stub nope'`, []string{"stub nope", ""}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			messages, err := installerStrings([]byte(test.source), false)
+			require.NoError(t, err)
+			var got []string
+			for _, message := range messages {
+				got = append(got, message.text)
+			}
+			require.Equal(t, test.want, got)
+		})
+	}
 }

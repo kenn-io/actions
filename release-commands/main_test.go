@@ -69,7 +69,8 @@ func TestReleaseCommands(t *testing.T) {
 		line                                int
 		binaries                            []string
 	}{
-		{"printf option terminator", ".sh", "echo 'stub plain'\nprintf -- '%s\\n' 'stub nope'", `has no command "nope"`, "", 2, []string{"stub"}},
+		{"echo octal escape", ".sh", `echo 'stub plain'; echo -e 'stub\0040nope'`, `has no command "nope"`, "", 1, []string{"stub"}},
+		{"printf stop escape", ".sh", `printf '%b\n' 'stub plain\c' 'stub nope'`, "", "", 0, []string{"stub"}},
 		{"markdown prose", ".md", "Getting started.", "", "", 0, []string{"stub"}},
 		{"installer without commands", ".sh", "echo hello", "no commands for stub", "", 0, []string{"stub"}},
 		{"installer parse error names file", ".sh", "echo 'stub nope'\nfoo() { case", "example.sh:2:", "", 2, []string{"stub"}},
