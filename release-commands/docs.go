@@ -17,6 +17,7 @@ import (
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
+	"go.kenn.io/kit/tui/termtext"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -33,29 +34,29 @@ type exampleBlock struct {
 //go:embed installer.ps1
 var powershellParser string
 
-func installerStrings(source string) ([]example, error) {
+type installerMessage struct {
+	Text      string `json:"text"`
+	Line      int    `json:"line"`
+	Statement int    `json:"statement"`
+	End       int    `json:"end"`
+}
+
+func installerStrings(source string) ([]installerMessage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "pwsh", "-NoProfile", "-NonInteractive", "-Command", powershellParser)
-	cmd.Stdin = strings.NewReader(strings.ReplaceAll(source, "\r\n", "\n"))
+	cmd.Stdin = strings.NewReader(source)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	data, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("PowerShell parser: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
-	var messages []struct {
-		Text string `json:"text"`
-		Line int    `json:"line"`
-	}
+	var messages []installerMessage
 	if err := json.Unmarshal(data, &messages); err != nil {
 		return nil, err
 	}
-	var result []example
-	for _, message := range messages {
-		result = append(result, example{message.Text, message.Line})
-	}
-	return result, nil
+	return messages, nil
 }
 
 const note = "Not in the latest release yet"
@@ -86,7 +87,7 @@ func (env shellEnv) Get(name string) expand.Variable {
 
 func (shellEnv) Each(func(string, expand.Variable) bool) {}
 
-func shellStrings(source []byte) ([]example, error) {
+func shellStrings(source []byte) ([]installerMessage, error) {
 	tree, err := syntax.NewParser().Parse(bytes.NewReader(source), "")
 	if err != nil {
 		return nil, err
@@ -98,17 +99,17 @@ func shellStrings(source []byte) ([]example, error) {
 		}
 		return true
 	})
-	var messages []example
+	var messages []installerMessage
 	// Escapes expanded by echo or printf split lines in place; a physical newline,
 	// carried as NUL, also moves to the next source line.
-	emit := func(value string, line int) {
+	emit := func(value string, line, statement, end int) {
 		for text := range strings.SplitSeq(value, "\n") {
-			messages = append(messages, example{strings.ReplaceAll(text, "\x00", "\n"), line})
+			messages = append(messages, installerMessage{strings.ReplaceAll(text, "\x00", "\n"), line, statement, end})
 			line += strings.Count(text, "\x00")
 		}
 	}
-	var printCall func(*syntax.CallExpr, shellEnv, int) error
-	printCall = func(call *syntax.CallExpr, env shellEnv, depth int) error {
+	var printCall func(*syntax.CallExpr, shellEnv, int, int, int) error
+	printCall = func(call *syntax.CallExpr, env shellEnv, depth, statement, end int) error {
 		if len(call.Args) == 0 {
 			return nil
 		}
@@ -146,7 +147,7 @@ func shellStrings(source []byte) ([]example, error) {
 					return false
 				}
 				if nested, ok := node.(*syntax.CallExpr); ok && failure == nil {
-					failure = printCall(nested, shellEnv{args, true}, depth+1)
+					failure = printCall(nested, shellEnv{args, true}, depth+1, statement, end)
 				}
 				return failure == nil
 			})
@@ -171,7 +172,7 @@ func shellStrings(source []byte) ([]example, error) {
 			if escaped {
 				value, _, err = expand.Format(&config, "%b", []string{value})
 			}
-			emit(value, args[0].line)
+			emit(value, args[0].line, statement, end)
 			return err
 		}
 		if values[0] == "--" && len(values) > 1 {
@@ -187,7 +188,7 @@ func shellStrings(source []byte) ([]example, error) {
 			if used > 0 {
 				line = args[0].line
 			}
-			emit(value, line)
+			emit(value, line, statement, end)
 			values, args = values[used:], args[used:]
 			if used == 0 || len(values) == 0 {
 				return nil
@@ -200,7 +201,7 @@ func shellStrings(source []byte) ([]example, error) {
 			return false
 		}
 		if call, ok := node.(*syntax.CallExpr); ok && err == nil {
-			err = printCall(call, shellEnv{}, 0)
+			err = printCall(call, shellEnv{}, 0, int(call.Pos().Offset()), int(call.End().Offset()))
 		}
 		return err == nil
 	})
@@ -245,7 +246,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 	}
 	if filepath.Ext(file) != ".md" {
-		var messages []example
+		var messages []installerMessage
 		var failure error
 		if filepath.Ext(file) == ".ps1" {
 			messages, failure = installerStrings(string(source))
@@ -255,20 +256,42 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		if failure != nil {
 			return nil, fmt.Errorf("%s: cannot read installer messages: %w", file, failure)
 		}
+		position, marker := 0, ""
+		join := false
 		for _, message := range messages {
-			for offset, value := range strings.Split(message.text, "\n") {
-				current = exampleBlock{}
+			if message.Statement >= position {
+				gap := strings.Split(string(source[position:message.Statement]), "\n")
+				for index, line := range gap {
+					line = strings.Trim(line, " \t\r;&|")
+					switch {
+					case strings.HasPrefix(line, "#") && strings.Contains(line, note):
+						marker, join = "unreleased note", false
+					case strings.HasPrefix(line, "#") && strings.Contains(line, "release-commands: expected-failure"):
+						marker, join = "expected-failure marker", false
+					case line == "" && index > 0 && index < len(gap)-1, line != "" && !strings.HasPrefix(line, "#"):
+						marker, join = "", false
+					}
+				}
+			}
+			position = max(position, message.End)
+			current = exampleBlock{marker: marker}
+			for offset, value := range strings.Split(termtext.StripANSI(message.Text), "\n") {
 				for {
-					add(value, message.line+offset)
+					add(value, message.Line+offset)
 					_, rest, found := strings.Cut(value, ":")
 					if !found {
 						break
 					}
 					value = rest
 				}
-				if len(current.commands) > 0 {
+			}
+			if len(current.commands) > 0 {
+				if len(result) > 0 && marker != "" && join && result[len(result)-1].marker == marker {
+					result[len(result)-1].commands = append(result[len(result)-1].commands, current.commands...)
+				} else {
 					result = append(result, current)
 				}
+				join = true
 			}
 		}
 		return result, nil

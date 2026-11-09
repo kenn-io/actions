@@ -2,56 +2,95 @@
 $ErrorActionPreference = 'Stop'
 $tokens = $null
 $errors = $null
-$tree = [System.Management.Automation.Language.Parser]::ParseInput([Console]::In.ReadToEnd(), [ref]$tokens, [ref]$errors)
+$source = [Console]::In.ReadToEnd()
+$tree = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$errors)
 if ($errors.Count) {
     [Console]::Error.WriteLine("line $($errors[0].Extent.StartLineNumber): $($errors[0].Message)")
     exit 1
 }
-$printers = @{ 'Write-Host' = $true; 'Write-Output' = $true; 'echo' = $true; 'Write-Error' = $true; 'Write-Warning' = $true; 'Write-Information' = $true }
-function StaticString($expression) {
-    if ($expression -is [System.Management.Automation.Language.ParenExpressionAst] -and $expression.Pipeline.PipelineElements.Count -eq 1) { $expression = $expression.Pipeline.PipelineElements[0].Expression }
-    if ($expression -is [System.Management.Automation.Language.StringConstantExpressionAst]) { return $expression.Value }
-    if ($expression -is [System.Management.Automation.Language.BinaryExpressionAst] -and $expression.Operator -eq 'Plus') { $left, $right = (StaticString $expression.Left), (StaticString $expression.Right) }
-    if ($null -ne $left -and $null -ne $right) { $left + $right }
-}
-$functions = $tree.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
-do {
-    $changed = $false
-    foreach ($function in $functions) {
-        if ($printers[$function.Name]) { continue }
-        $calls = $function.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)
-        if ($calls | Where-Object { $_.GetCommandName() -and $printers[$_.GetCommandName()] }) {
-            $printers[$function.Name] = $true
-            $changed = $true
+$printers = @('Write-Host', 'Write-Output', 'echo', 'Write-Error', 'Write-Warning', 'Write-Information')
+$functions = @{}
+foreach ($function in $tree.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) { $functions[$function.Name] = $function }
+function StaticValues($expression, $environment) {
+    if ($expression -is [System.Management.Automation.Language.ParenExpressionAst]) { return StaticValues $expression.Pipeline $environment }
+    if ($expression -is [System.Management.Automation.Language.SubExpressionAst] -or $expression -is [System.Management.Automation.Language.ArrayExpressionAst]) { return StaticValues $expression.SubExpression $environment }
+    if ($expression -is [System.Management.Automation.Language.StatementBlockAst]) {
+        foreach ($statement in $expression.Statements) { StaticValues $statement $environment }
+        return
+    }
+    if ($expression -is [System.Management.Automation.Language.PipelineAst] -and $expression.PipelineElements.Count -eq 1) { return StaticValues $expression.PipelineElements[0] $environment }
+    if ($expression -is [System.Management.Automation.Language.CommandExpressionAst]) { return StaticValues $expression.Expression $environment }
+    if ($expression -is [System.Management.Automation.Language.ArrayLiteralAst]) {
+        foreach ($element in $expression.Elements) { StaticValues $element $environment }
+        return
+    }
+    if ($expression -is [System.Management.Automation.Language.VariableExpressionAst]) {
+        if ($environment.ContainsKey($expression.VariablePath.UserPath)) { $environment[$expression.VariablePath.UserPath] }
+        return
+    }
+    $line = $expression.Extent.StartLineNumber
+    if ($expression.Extent.Text.StartsWith('@')) { $line++ }
+    if ($expression -is [System.Management.Automation.Language.StringConstantExpressionAst]) { return [pscustomobject]@{ text = $expression.Value; line = $line } }
+    if ($expression -is [System.Management.Automation.Language.BinaryExpressionAst] -and $expression.Operator -eq 'Plus') {
+        $left = @(StaticValues $expression.Left $environment)
+        $right = @(StaticValues $expression.Right $environment)
+        if ($left.Count -eq 1 -and $right.Count -eq 1) {
+            $line = if ($left[0].line -eq $expression.Left.Extent.StartLineNumber -and $right[0].line -ne $expression.Right.Extent.StartLineNumber) { $right[0].line } else { $left[0].line }
+            [pscustomobject]@{ text = $left[0].text + $right[0].text; line = $line }
         }
     }
-} while ($changed)
-$messages = @($tree.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object {
-    $call = $_
-    if (!$call.GetCommandName() -or !$printers[$call.GetCommandName()]) { return }
-    $bound = if ($call.GetCommandName() -eq 'Write-Host') { [System.Management.Automation.Language.StaticParameterBinder]::BindCommand($call, $true).BoundParameters }
-    $named = if ($bound) { $bound.GetEnumerator() | Where-Object Key -ne 'Object' | ForEach-Object { $_.Value.Value } }
-    $parts = @(foreach ($element in $call.CommandElements | Select-Object -Skip 1) {
-        if ($named -contains $element) { continue }
-        $items = if ($element -is [System.Management.Automation.Language.ArrayExpressionAst]) {
-            foreach ($statement in $element.SubExpression.Statements) {
-                if ($statement -is [System.Management.Automation.Language.PipelineAst] -and $statement.PipelineElements.Count -eq 1 -and $statement.PipelineElements[0] -is [System.Management.Automation.Language.CommandExpressionAst]) { $statement.PipelineElements[0].Expression }
-            }
-        } else { $element }
-        $items = foreach ($item in $items) { if ($item -is [System.Management.Automation.Language.ArrayLiteralAst]) { $item.Elements } else { $item } }
-        foreach ($element in $items) {
-            $value = StaticString $element
-            if ($element -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) { $value = $element.Value }
-            if ($null -ne $value) {
-                $line = $element.Extent.StartLineNumber
-                if ($element.Extent.Text.StartsWith('@')) { $line++ }
-                [pscustomobject]@{ text = $value; line = $line }
-            }
+    if ($expression -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
+        $value = $expression.Value
+        foreach ($nested in $expression.NestedExpressions) {
+            $parts = @(StaticValues $nested $environment)
+            $value = $value.Replace($nested.Extent.Text, ($parts.text -join ' '))
+            if ($parts.Count) { $line = $parts[0].line }
         }
-    })
-    if ($call.GetCommandName() -eq 'Write-Host' -and $parts.Count) {
-        $separator = if ($bound.ContainsKey('Separator')) { $bound['Separator'].ConstantValue } else { ' ' }
-        [pscustomobject]@{ text = $parts.text -join $separator; line = $parts[0].line }
-    } else { $parts }
-})
+        [pscustomobject]@{ text = $value; line = $line }
+    }
+}
+function ReadCalls($root, $environment, $depth, $statement, $end) {
+    foreach ($call in $root.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+        $parent = $call.Parent
+        while ($parent -and $parent -ne $root -and $parent -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $parent = $parent.Parent }
+        if ($parent -is [System.Management.Automation.Language.FunctionDefinitionAst]) { continue }
+        $name = $call.GetCommandName()
+        if (!$name -or (!$functions.ContainsKey($name) -and $name -notin $printers)) { continue }
+        $outer = if ($statement -ge 0) { $statement } else { [System.Text.Encoding]::UTF8.GetByteCount($source.Substring(0, $call.Extent.StartOffset)) }
+        $last = if ($end -ge 0) { $end } else { [System.Text.Encoding]::UTF8.GetByteCount($source.Substring(0, $call.Extent.EndOffset)) }
+        if ($functions.ContainsKey($name)) {
+            if ($depth -ge $functions.Count) { throw "recursive printer helper $name" }
+            $function = $functions[$name]
+            $parameters = @($function.Parameters) + @($function.Body.ParamBlock.Parameters) | Where-Object { $null -ne $_ }
+            $bound = @{}
+            $position = 0
+            for ($index = 1; $index -lt $call.CommandElements.Count; $index++) {
+                $element = $call.CommandElements[$index]
+                if ($element -is [System.Management.Automation.Language.CommandParameterAst]) {
+                    $parameter = $element.ParameterName
+                    if ($element.Argument) { $element = $element.Argument } else { $element = $call.CommandElements[++$index] }
+                } else {
+                    while ($position -lt $parameters.Count -and $bound.ContainsKey($parameters[$position].Name.VariablePath.UserPath)) { $position++ }
+                    if ($position -ge $parameters.Count) { continue }
+                    $parameter = $parameters[$position++].Name.VariablePath.UserPath
+                }
+                $bound[$parameter] = @(StaticValues $element $environment)
+            }
+            ReadCalls $function.Body $bound ($depth + 1) $outer $last
+            continue
+        }
+        $bound = if ($name -eq 'Write-Host') { [System.Management.Automation.Language.StaticParameterBinder]::BindCommand($call, $true).BoundParameters }
+        $named = if ($bound) { $bound.GetEnumerator() | Where-Object Key -ne 'Object' | ForEach-Object { $_.Value.Value } }
+        $parts = @(foreach ($element in $call.CommandElements | Select-Object -Skip 1) {
+            if ($named -contains $element) { continue }
+            StaticValues $element $environment
+        })
+        if ($name -eq 'Write-Host' -and $parts.Count) {
+            $separator = if ($bound.ContainsKey('Separator')) { (StaticValues $bound['Separator'].Value $environment).text -join ' ' } else { ' ' }
+            $parts = @([pscustomobject]@{ text = $parts.text -join $separator; line = $parts[0].line })
+        }
+        foreach ($part in $parts) { [pscustomobject]@{ text = $part.text; line = $part.line; statement = $outer; end = $last } }
+    }
+}
+$messages = @(ReadCalls $tree @{} 0 -1 -1)
 ConvertTo-Json -InputObject $messages -Compress

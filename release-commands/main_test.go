@@ -68,6 +68,10 @@ func TestReleaseCommands(t *testing.T) {
 		name, ext, content, finding string
 		line                        int
 	}{
+		{"markdown parse escape", ".md", "`stub started (pid 12)`", "add <!-- release-commands: expected-failure -->", 1},
+		{"installer prose escape", ".sh", "# release-commands: expected-failure\necho 'stub is installed'", "", 0},
+		{"installer unreleased", ".sh", "# Not in the latest release yet\necho 'stub future'", "", 0},
+		{"installer passing marker", ".sh", "# release-commands: expected-failure\necho 'stub run file'", "passes; remove expected-failure marker", 2},
 		{"disabled flag parsing", ".md", "`stub unsafe file --help=false`", "", 0},
 		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"`, 3},
 		{"absent child", ".md", "```sh\nstub group absent\n```", `has no command "absent"`, 2},
@@ -81,7 +85,7 @@ func TestReleaseCommands(t *testing.T) {
 		{"inherited flag", ".md", "`stub --config cfg group child ID`", "", 0},
 		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0},
 		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", 1},
-		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "stub-helper: not in", 0},
+		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", 0},
 		{"leaf arguments", ".md", "`stub plain somefile`", "", 0},
 		{"group argument synopsis", ".md", "`stub named child`", "", 0},
 		{"long assignment", ".md", "`stub group --limit=anything child ID`", "", 0},

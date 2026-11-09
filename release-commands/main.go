@@ -51,7 +51,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return 1
 	}
 	failed := false
-	reported := map[string]bool{}
+	referenced := map[string]bool{}
 	for _, file := range flags.Args() {
 		data, err := os.ReadFile(file)
 		var blocks []exampleBlock
@@ -69,7 +69,10 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 				problem := ""
 				invocations, err := commands(example.text)
 				if err != nil {
-					problem = err.Error()
+					problem = err.Error() + "; for output samples, add <!-- release-commands: expected-failure --> before the block"
+				}
+				for _, args := range invocations {
+					referenced[args[0]] = true
 				}
 				for _, args := range invocations {
 					if !slices.Contains(*binaries, args[0]) {
@@ -78,7 +81,6 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 					binary := paths[args[0]]
 					if binary == "" {
 						problem = fmt.Sprintf("%s: not in %s", args[0], filepath.Base(*archive))
-						reported[args[0]] = reported[args[0]] || block.marker == ""
 						break
 					}
 					if err := check(ctx, binary, args[1:]); err != nil {
@@ -99,7 +101,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		}
 	}
 	for _, name := range *binaries {
-		if paths[name] == "" && !reported[name] {
+		if paths[name] == "" && !referenced[name] {
 			fmt.Fprintf(errOut, "%s: not in %s\n", name, filepath.Base(*archive))
 			failed = true
 		}

@@ -64,6 +64,8 @@ kata unknown-command
 ```
 ````
 
+Installer comments use `# Not in the latest release yet` or `# release-commands: expected-failure`. A comment covers adjacent printer statements until a blank source line or a statement that doesn't print a message. The check reports the same removal notice when every command in that block passes. Use the expected-failure comment for prose that starts with a binary name.
+
 ## Fix a finding
 
 A finding looks like `README.md:42: kata future-command: v1.0.0 has no command "future-command"`. Use a command the release supports, publish a release containing it, or mark the block as unreleased. A missing binary finding means the downloaded archive doesn't contain the documented executable.
@@ -72,7 +74,7 @@ A finding looks like `README.md:42: kata future-command: v1.0.0 has no command "
 
 The action checks Linux amd64 binaries only. It asks each binary for `help <command path>`, then checks command and visible flag names against the final command's help page, including inherited flags. Hidden flags count as absent. Values only determine which words belong to flags; the checker doesn't validate types, argument counts, data, permissions, or deprecation notices. Each help invocation has a fresh temporary home, a restricted environment, and a ten-second limit. The release binary must be trusted.
 
-Command discovery reads Cobra's `Usage:` section and flag rows, including inherited flags and kata's comma-separated `Global:` line. Unrecognized flag rows produce an `unsupported help` error. A command can accept positional arguments and also offer child commands. A group whose usage only shows `[flags]` and `[command]` rejects an unknown child. Commands with a different help format need a separate check. Files must be listed explicitly; the action doesn't crawl links or infer which pages a site publishes. Installer parsing reads messages without evaluating shell or PowerShell scripts. Shell variables outside printer helpers remain symbolic; other variables inside helpers are omitted. Command substitutions receive a placeholder. Commands behind `sudo`, `./`, or other wrappers aren't checked. The checker is built once and runs from the workspace, so findings use the relative paths supplied in `files`.
+Command discovery reads Cobra's `Usage:` section and flag rows, including inherited flags and kata's comma-separated `Global:` line. Unrecognized flag rows produce an `unsupported help` error. A command can accept positional arguments and also offer child commands. A group whose usage only shows `[flags]` and `[command]` rejects an unknown child. Commands with a different help format need a separate check. Files must be listed explicitly; the action doesn't crawl links or infer which pages a site publishes. Installer parsing reads messages without evaluating shell or PowerShell scripts. Shell variables outside printer helpers remain symbolic; other variables inside helpers are omitted. Command substitutions receive a placeholder. PowerShell printer helpers bind literal positional and named arguments from either parameter declaration form, then read printed variables, static interpolation, arrays, and string concatenation. Uncalled helpers and unused arguments supply no examples. Commands behind `sudo`, `./`, or other wrappers aren't checked. The checker is built once and runs from the workspace, so findings use the relative paths supplied in `files`.
 
 ## Run locally
 

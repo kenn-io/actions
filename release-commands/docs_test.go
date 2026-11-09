@@ -12,6 +12,16 @@ func TestExamples(t *testing.T) {
 		name, ext, source, marker string
 		want                      []example
 	}{
+		{"powershell CRLF marker", ".ps1", "# release-commands: expected-failure\r\nWrite-Host 'stub nope'", "expected-failure marker", []example{{"stub nope", 2}}},
+		{"colored printf", ".sh", `printf '\033[32mstub nope\033[0m\n'`, "", []example{{"stub nope", 1}}},
+		{"colored echo", ".sh", `echo -e '\033[32mstub nope\033[0m'`, "", []example{{"stub nope", 1}}},
+		{"colored powershell", ".ps1", "Write-Host \"`e[32mstub nope`e[0m\"", "", []example{{"stub nope", 1}}},
+		{"powershell prefixed helper", ".ps1", "function info($message) { Write-Host ('Next: ' + $message) }\ninfo `\n'stub nope'", "", []example{{"stub nope", 3}}},
+		{"powershell named helper", ".ps1", "function info { param($first, $second) Write-Host ($first + ' ' + $second) }\ninfo -first 'stub' 'nope'", "", []example{{"stub nope", 2}}},
+		{"powershell nested helper array", ".ps1", "function outer($messages) { inner $messages }; function inner($messages) { Write-Output $messages }\nouter @('stub run', 'stub nope')", "", []example{{"stub run", 2}, {"stub nope", 2}}},
+		{"powershell uncalled helper", ".ps1", `function info { Write-Host 'stub nope' }`, "", nil},
+		{"powershell helper joined parameters", ".ps1", `function info($first, $second) { Write-Host "$first $second" }; info 'stub' 'nope'`, "", []example{{"stub nope", 1}}},
+		{"powershell helper unused argument", ".ps1", `function info($first, $second) { Write-Host $first }; info 'ready' 'stub nope'`, "", nil},
 		{"formatted wrapper output", ".sh", `info() { printf '%s\n' "$*"; }; info 'stub run' 'file --bogus'`, "", []example{{"stub run file --bogus", 1}}},
 		{"table", ".md", "| Example |\n| --- |\n| `stub nope` |", "", []example{{"stub nope", 3}}},
 		{"shell joined args", ".sh", `echo 'stub run' 'file --bogus'`, "", []example{{"stub run file --bogus", 1}}},
@@ -63,5 +73,34 @@ func TestExamples(t *testing.T) {
 			}
 			require.Equal(t, test.want, got)
 		})
+	}
+}
+
+func TestInstallerMarkers(t *testing.T) {
+	for _, ext := range []string{".sh", ".ps1"} {
+		for _, marker := range []string{note, "release-commands: expected-failure"} {
+			for _, ending := range []string{"\n", "ignored\n", "ignored; "} {
+				t.Run(ext+marker+ending, func(t *testing.T) {
+					helper, call, printer := "info() { printf '%s\\n' \"$1\" \"$2\"; }", "info \\\n'stub nope' 'stub absent'", "echo"
+					if ext == ".ps1" {
+						helper, call, printer = "function info($first, $second) { Write-Output $first $second }", "info `\n'stub nope' 'stub absent'", "Write-Host"
+					}
+					source := helper + "\n# " + marker + "\n" + call + "\n" + printer + " 'stub future'\n" + ending + printer + " 'stub run'"
+					blocks, err := examples("example"+ext, []byte(source), []string{"stub"})
+					require.NoError(t, err)
+					require.Len(t, blocks, 2)
+					wantMarker := "unreleased note"
+					if marker != note {
+						wantMarker = "expected-failure marker"
+					}
+					require.Equal(t, exampleBlock{marker: wantMarker, commands: []example{{"stub nope", 4}, {"stub absent", 4}, {"stub future", 5}}}, blocks[0])
+					line := 7
+					if ending == "ignored; " {
+						line = 6
+					}
+					require.Equal(t, exampleBlock{commands: []example{{"stub run", line}}}, blocks[1])
+				})
+			}
+		}
 	}
 }
