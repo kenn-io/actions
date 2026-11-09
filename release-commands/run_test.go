@@ -146,11 +146,5 @@ func TestReleasedHelpRootFlags(t *testing.T) {
 	wrapper.WriteString("*) exit 2 ;;\nesac\n")
 	binary := filepath.Join(dir, "msgvault")
 	require.NoError(t, os.WriteFile(binary, []byte(wrapper.String()), 0o700))
-	for _, command := range []string{
-		"daemon --home example-home stop",
-	} {
-		t.Run(command, func(t *testing.T) {
-			require.NoError(t, (helpCache{}).check(t.Context(), binary, strings.Fields(command)))
-		})
-	}
+	require.NoError(t, (helpCache{}).check(t.Context(), binary, []string{"daemon", "--home", "example-home", "stop"}))
 }
