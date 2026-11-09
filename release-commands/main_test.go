@@ -81,12 +81,12 @@ func TestReleaseCommands(t *testing.T) {
 		{"installer absent child", ".ps1", "Write-Host 'stub group absent'", `has no command "absent"`, 1, 0, []string{"stub"}},
 		{"installer unreleased", ".sh", "# Not in the latest release yet\necho 'stub nope'", "", 0, 0, []string{"stub"}},
 		{"installer passing marker", ".ps1", "# release-commands: expected-failure\nWrite-Host 'stub run file'", "passes; remove expected-failure marker", 2, 0, []string{"stub"}},
-		{"shell marker hint", ".sh", "echo 'stub nope'", "add # release-commands: expected-failure", 1, 0, []string{"stub"}},
-		{"powershell marker hint", ".ps1", "Write-Host 'stub nope'", "add # release-commands: expected-failure", 1, 0, []string{"stub"}},
+		{"shell marker hint", ".sh", "echo 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, 1, 0, []string{"stub"}},
+		{"powershell marker hint", ".ps1", "Write-Host 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, 1, 0, []string{"stub"}},
 		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0 has no command "nope"`, 1, 0, []string{"stub"}},
 		{"installer syntax error", ".sh", "echo 'stub run", "cannot read installer messages", 0, 0, []string{"stub"}},
 		{"marked assigned missing binary output", ".md", "<!-- release-commands: expected-failure -->\n\n`MODE=\"a b\" stub-helper started (pid 12)`", "", 0, 0, []string{"stub", "stub-helper"}},
-		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for output samples, add <!-- release-commands: expected-failure -->`, 3, 0, []string{"stub"}},
+		{"unknown command", ".md", "Intro\n\n`stub nope`", `v1.0.0 has no command "nope"; for unreleased commands, add "Not in the latest release yet" before the block; for output samples, add <!-- release-commands: expected-failure -->`, 3, 0, []string{"stub"}},
 		{"misconfigured binary", ".md", "`stub nope`", "stbu: not in", 0, 0, []string{"stbu"}},
 		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", 1, 0, []string{"stub", "stub-helper"}},
 		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", 0, 0, []string{"stub", "stub-helper"}},
@@ -121,6 +121,16 @@ func TestReleaseCommands(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReleaseCommandsActionsNotice(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "true")
+	file := filepath.Join(t.TempDir(), "example,one.md")
+	require.NoError(t, os.WriteFile(file, []byte("Not in the latest release yet\n\n`stub run 100%`"), 0o600))
+	var out, errOut bytes.Buffer
+	require.Equal(t, 0, run(t.Context(), []string{"--archive", fixture, "--binary", "stub", file}, &out, &errOut), errOut.String())
+	require.Contains(t, out.String(), file+":3: passes; remove unreleased note: stub run 100%\n")
+	require.Contains(t, out.String(), "::notice file="+filepath.Dir(file)+"/example%2Cone.md,line=3::passes; remove unreleased note: stub run 100%25\n")
 }
 
 func TestReleaseCommandsHelpCache(t *testing.T) {

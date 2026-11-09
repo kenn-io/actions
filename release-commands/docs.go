@@ -13,6 +13,7 @@ import (
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
 	"go.kenn.io/kit/tui/termtext"
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -39,8 +40,10 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 		return nil, err
 	}
 	printers := map[string]bool{"echo": true, "printf": true}
+	functions := map[string]*syntax.Stmt{}
 	syntax.Walk(tree, func(node syntax.Node) bool {
 		if function, ok := node.(*syntax.FuncDecl); ok {
+			functions[function.Name.Value] = function.Body
 			syntax.Walk(function.Body, func(node syntax.Node) bool {
 				if call, ok := node.(*syntax.CallExpr); ok && len(call.Args) > 0 && printers[call.Args[0].Lit()] {
 					printers[function.Name.Value] = true
@@ -52,39 +55,66 @@ func shellStrings(source []byte) ([]installerMessage, error) {
 		return true
 	})
 	var messages []installerMessage
-	syntax.Walk(tree, func(node syntax.Node) bool {
-		if _, ok := node.(*syntax.CmdSubst); ok {
-			return false
-		}
-		call, ok := node.(*syntax.CallExpr)
-		if !ok || len(call.Args) == 0 || !printers[call.Args[0].Lit()] {
-			return true
-		}
-		if call.Args[0].Lit() == "printf" && len(call.Args) > 1 && call.Args[1].Lit() == "-v" {
-			return false
-		}
-		for _, word := range call.Args[1:] {
-			if len(word.Parts) != 1 {
-				continue
+	visited := map[string]bool{}
+	queue := []syntax.Node{tree}
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		syntax.Walk(node, func(node syntax.Node) bool {
+			switch node.(type) {
+			case *syntax.CmdSubst, *syntax.FuncDecl:
+				return false
 			}
-			switch part := word.Parts[0].(type) {
-			case *syntax.SglQuoted:
-				messages = append(messages, installerMessage{part.Value, int(part.Pos().Line())})
-			case *syntax.DblQuoted:
-				text := string(source[part.Pos().Offset()+1 : part.End().Offset()-1])
-				if !strings.Contains(text, "$(") && !strings.Contains(text, "`") {
-					messages = append(messages, installerMessage{text, int(part.Pos().Line())})
+			call, ok := node.(*syntax.CallExpr)
+			if !ok || len(call.Args) == 0 {
+				return true
+			}
+			name := call.Args[0].Lit()
+			if body := functions[name]; body != nil && !visited[name] {
+				visited[name] = true
+				queue = append(queue, body)
+			}
+			if !printers[name] {
+				return true
+			}
+			if call.Args[0].Lit() == "printf" && len(call.Args) > 1 && call.Args[1].Lit() == "-v" {
+				return false
+			}
+			for index, word := range call.Args[1:] {
+				if len(word.Parts) != 1 {
+					continue
+				}
+				var text string
+				switch part := word.Parts[0].(type) {
+				case *syntax.SglQuoted:
+					text = part.Value
+				case *syntax.DblQuoted:
+					text = string(source[part.Pos().Offset()+1 : part.End().Offset()-1])
+					if strings.Contains(text, "$(") || strings.Contains(text, "`") {
+						continue
+					}
+				}
+				for offset, value := range strings.Split(text, "\n") {
+					if name == "printf" && index == 0 {
+						// Decode format escapes without substituting conversion arguments.
+						value, _, err = expand.Format(nil, strings.ReplaceAll(value, "%", "%%"), nil)
+						if err != nil {
+							continue
+						}
+					}
+					messages = append(messages, installerMessage{value, int(word.Pos().Line()) + offset})
 				}
 			}
-		}
-		return false
-	})
+			return false
+		})
+	}
+	slices.SortStableFunc(messages, func(a, b installerMessage) int { return cmp.Compare(a.Line, b.Line) })
 	return messages, nil
 }
 
 var (
-	powershellFunction = regexp.MustCompile(`(?is)\bfunction\s+([\w-]+)[^{]*\{[^}]*\bWrite-[\w-]+[^}]*\}`)
-	powershellCall     = regexp.MustCompile(`^\s*([\w-]+)\s+`)
+	powershellFunction = regexp.MustCompile(`(?is)\bfunction\s+([\w-]+)[^{]*\{[^}]*\}`)
+	powershellCall     = regexp.MustCompile(`^\s*([\w-]+)(?:\s+|$)`)
 	colorPrefix        = regexp.MustCompile(`^\s*\$(?:\{[\w]+\}|[\w]+)`)
 )
 
@@ -142,12 +172,36 @@ func powershellStrings(source []byte) ([]installerMessage, error) {
 	}
 	lines := strings.Split(string(clean), "\n")
 	printers := map[string]bool{}
-	for _, match := range powershellFunction.FindAllStringSubmatch(string(clean), -1) {
-		printers[strings.ToLower(match[1])] = true
+	functions := map[string]bool{}
+	owners := make([]string, len(lines))
+	for _, match := range powershellFunction.FindAllSubmatchIndex(clean, -1) {
+		name := strings.ToLower(string(clean[match[2]:match[3]]))
+		functions[name] = true
+		printers[name] = strings.Contains(strings.ToLower(string(clean[match[0]:match[1]])), "write-")
+		start := bytes.Count(clean[:match[0]], []byte{'\n'})
+		end := bytes.Count(clean[:match[1]], []byte{'\n'})
+		for line := start; line <= end; line++ {
+			owners[line] = name
+		}
+	}
+	called := map[string]bool{}
+	for changed := true; changed; {
+		changed = false
+		for line, text := range lines {
+			if !codeLines[line] || owners[line] != "" && !called[owners[line]] {
+				continue
+			}
+			if call := powershellCall.FindStringSubmatch(text); call != nil {
+				name := strings.ToLower(call[1])
+				if functions[name] && !called[name] {
+					called[name], changed = true, true
+				}
+			}
+		}
 	}
 	var messages []installerMessage
 	for line, text := range lines {
-		if !codeLines[line] {
+		if !codeLines[line] || owners[line] != "" && !called[owners[line]] {
 			continue
 		}
 		call := powershellCall.FindStringSubmatchIndex(text)
@@ -249,11 +303,8 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 			for colorPrefix.MatchString(text) {
 				text = colorPrefix.ReplaceAllString(text, "")
 			}
-			for offset, value := range strings.Split(termtext.StripANSI(text), "\n") {
+			for value := range strings.SplitSeq(termtext.StripANSI(text), "\n") {
 				line := message.Line
-				if filepath.Ext(file) != ".ps1" {
-					line += offset
-				}
 				marker, key := markerFor(line)
 				if key != blockLine {
 					flush()

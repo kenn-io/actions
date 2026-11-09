@@ -55,8 +55,10 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	referenced := map[string]bool{}
 	for _, file := range flags.Args() {
 		markerHint := "# release-commands: expected-failure"
+		noteHint := "# " + note
 		if filepath.Ext(file) == ".md" {
 			markerHint = "<!-- release-commands: expected-failure -->"
+			noteHint = note
 		}
 		data, err := os.ReadFile(file)
 		var blocks []exampleBlock
@@ -92,7 +94,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 						break
 					}
 					if err := cache.check(ctx, binary, args[1:]); err != nil {
-						problem = fmt.Sprintf("%s %s; for output samples, add %s before the block", *release, err, markerHint)
+						problem = fmt.Sprintf("%s %s; for unreleased commands, add %q before the block; for output samples, add %s", *release, err, noteHint, markerHint)
 						break
 					}
 				}
@@ -104,7 +106,13 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			}
 			if firstChecked < len(block.commands) && !blockFailed && block.marker != "" {
 				first := block.commands[firstChecked]
-				fmt.Fprintf(out, "%s:%d: passes; remove %s: %s\n", file, first.line, block.marker, strings.TrimSpace(first.text[:commentIndex(first.text)]))
+				message := fmt.Sprintf("passes; remove %s: %s", block.marker, strings.TrimSpace(first.text[:commentIndex(first.text)]))
+				fmt.Fprintf(out, "%s:%d: %s\n", file, first.line, message)
+				if os.Getenv("GITHUB_ACTIONS") == "true" {
+					escape := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
+					property := strings.NewReplacer(":", "%3A", ",", "%2C")
+					fmt.Fprintf(out, "::notice file=%s,line=%d::%s\n", property.Replace(escape.Replace(file)), first.line, escape.Replace(message))
+				}
 			}
 		}
 	}
