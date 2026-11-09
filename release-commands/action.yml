@@ -51,6 +51,7 @@ runs:
         while IFS= read -r binary; do
           [[ -z "$binary" ]] || args+=(--binary "$binary")
         done <<< "$BINARIES"
+        args+=(--)
         while IFS= read -r file; do
           [[ -z "$file" ]] || args+=("$file")
         done <<< "$FILES"

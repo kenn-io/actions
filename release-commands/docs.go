@@ -13,8 +13,6 @@ import (
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
-	"go.kenn.io/kit/tui/termtext"
-	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -30,84 +28,68 @@ type exampleBlock struct {
 const note = "Not in the latest release yet"
 
 var (
-	installerTokens      = regexp.MustCompile(`(?s)'(?:''|[^'])*'|"(?:\\.|` + "`" + `.|""|[^"\\` + "`" + `])*"|<\#.*?\#>|\#[^\n]*|[;{}\n]|[^\s;{}'"\#]+`)
-	powershellFunction   = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
-	colorPrefix          = regexp.MustCompile(`^(?:\s*\$(?:\{\w+\}|\w+))+`)
-	installerInstruction = regexp.MustCompile(`(?i)\brun\s+(?:'([^']+)'|"([^"]+)"|(.+))`)
+	powershellLiterals  = regexp.MustCompile(`(?s)'(?:''|[^'])*'|"(?:` + "`" + `.|""|[^"` + "`" + `])*"|<\#.*?\#>|\#[^\n]*`)
+	powershellCalls     = regexp.MustCompile(`(?im)(?:^|[;{}|])[ \t]*([\w-]+)[ \t]+`)
+	powershellFunctions = regexp.MustCompile(`(?i)\bfunction\s+([\w-]+)`)
+	powershellHelpers   = regexp.MustCompile(`(?im)^[ \t]*function\s+([\w-]+)\((?:\[string\])?(\$\w+)\)[ \t]*\{[ \t]*(write-[\w-]+)[ \t]+(\$\w+)[^{}\r\n]*\}`)
+	powershellArguments = regexp.MustCompile(`^[ \t]*('(?:''|[^'\r\n])*'|"[^"\r\n]*"|[^\s;'"{}|#]+)`)
 )
 
-// installerStrings reads single-line quoted output arguments throughout the source.
+// installerStrings reads static, single-line output and one-step message helpers.
 func installerStrings(source []byte, powershell bool) []example {
 	if !powershell {
 		return shellStrings(source)
 	}
-	matches := installerTokens.FindAllIndex(source, -1)
+	// Mask strings and comments so their contents cannot introduce output calls.
 	code := append([]byte(nil), source...)
-	for _, match := range matches {
-		if strings.ContainsRune("'\"#<", rune(source[match[0]])) {
-			copy(code[match[0]:match[1]], bytes.Repeat([]byte{' '}, match[1]-match[0]))
+	for _, match := range powershellLiterals.FindAllIndex(source, -1) {
+		for i := match[0]; i < match[1]; i++ {
+			if code[i] != '\n' {
+				code[i] = ' '
+			}
 		}
 	}
-	// Each function body opens at its first brace; a body that calls a printer makes a wrapper.
-	printers, bodies := map[string]bool{"echo": true, "printf": true}, map[int]string{}
-	for _, match := range powershellFunction.FindAllSubmatchIndex(code, -1) {
-		name := strings.ToLower(string(code[match[2]:match[3]]))
-		bodies[match[0]+bytes.IndexByte(code[match[0]:], '{')] = name
+	functions := map[string]bool{}
+	for _, match := range powershellFunctions.FindAllSubmatch(code, -1) {
+		functions[strings.ToLower(string(match[1]))] = false
+	}
+	for _, match := range powershellHelpers.FindAllSubmatch(code, -1) {
+		_, helper := functions[strings.ToLower(string(match[3]))]
+		if !helper && bytes.EqualFold(match[2], match[4]) {
+			functions[strings.ToLower(string(match[1]))] = true
+		}
 	}
 	var messages []example
-	// Rescan until no new wrapper appears, so declaration order doesn't matter.
-	for known := 0; known != len(printers); {
-		known, messages = len(printers), nil
-		call, boundary, metadata, owners := "", true, false, []string{}
-		for _, match := range matches {
-			text := string(source[match[0]:match[1]])
-			if strings.HasPrefix(text, "#") || strings.HasPrefix(text, "<#") {
+	for _, match := range powershellCalls.FindAllSubmatchIndex(code, -1) {
+		name := strings.ToLower(string(code[match[2]:match[3]]))
+		forwarded, declared := functions[name]
+		if !forwarded && (declared || !strings.HasPrefix(name, "write-")) {
+			continue
+		}
+		rest := string(source[match[3]:])
+		metadata := false
+		for {
+			arg := powershellArguments.FindStringSubmatch(rest)
+			if arg == nil {
+				break
+			}
+			rest = rest[len(arg[0]):]
+			text := arg[1]
+			if strings.HasPrefix(text, "-") {
+				metadata = !slices.Contains([]string{"-object", "-message", "-messagedata", "-nonewline", "-noenumerate"}, strings.ToLower(text))
 				continue
 			}
-			if text == "{" {
-				owners = append(owners, bodies[match[0]])
-			} else if text == "}" && len(owners) > 0 {
-				owners = owners[:len(owners)-1]
-			}
-			operator := text == "&&" || text == "||" || text == "|"
-			if strings.ContainsAny(text, ";{}\n") && len(text) == 1 || operator {
-				call, boundary, metadata = "", true, false
-				continue
-			}
-			if boundary {
-				name := strings.ToLower(text)
-				if printers[name] || strings.HasPrefix(name, "write-") {
-					call = name
-					for _, owner := range owners {
-						printers[owner] = true
-					}
-				}
-				boundary = false
-				continue
-			}
-			// Unquoted words never span lines, so only quoted multiline strings stop here.
-			if call == "" || strings.Contains(text, "\n") {
-				continue
-			}
-			if text[0] != '\'' && text[0] != '"' {
-				name := strings.ToLower(text)
-				metadata = strings.HasPrefix(name, "-") && !strings.Contains(name, ":") && !slices.Contains([]string{"-object", "-message", "-messagedata", "-nonewline", "-noenumerate"}, name)
-				if strings.Contains(text, "(") {
-					call = ""
-				}
-				continue
-			}
-			value := colorPrefix.ReplaceAllString(text[1:len(text)-1], "")
-			if metadata || text[0] == '"' && expands(value, true) {
+			if metadata {
 				metadata = false
 				continue
 			}
-			if text[0] == '\'' {
-				value = strings.ReplaceAll(value, "''", "'")
-			} else {
-				value = strings.ReplaceAll(strings.NewReplacer("`n", "\n", "`t", "\t", "`e", "\x1b", "`\"", "\"", "``", "`", "`$", "$").Replace(value), "\"\"", "\"")
+			if len(text) > 1 && (text[0] == '\'' || text[0] == '"') {
+				value := text[1 : len(text)-1]
+				if text[0] == '\'' || !strings.ContainsAny(value, "$`") {
+					messages = append(messages, example{value, bytes.Count(source[:match[3]], []byte{'\n'}) + 1})
+				}
 			}
-			messages = append(messages, example{value, bytes.Count(source[:match[0]], []byte{'\n'}) + 1})
+			break
 		}
 	}
 	return messages
@@ -119,118 +101,85 @@ func shellStrings(source []byte) []example {
 	if err != nil {
 		return nil
 	}
-	type outputCall struct {
-		call  *syntax.CallExpr
-		owner string
-	}
-	var calls []outputCall
-	var collect func(syntax.Node, string)
-	collect = func(root syntax.Node, owner string) {
-		syntax.Walk(root, func(node syntax.Node) bool {
-			switch node := node.(type) {
-			case *syntax.Redirect:
-				return false
-			case *syntax.FuncDecl:
-				collect(node.Body, node.Name.Value)
-				return false
-			case *syntax.CallExpr:
-				calls = append(calls, outputCall{node, owner})
-				return false
-			}
-			return true
-		})
-	}
-	collect(tree, "")
-	// Index zero means every argument; wrapper entries name the parameters they forward.
+	// Index zero means all arguments. Only direct printers establish helpers.
 	printers := map[string]map[int]bool{"echo": {0: true}, "printf": {0: true}}
-	for changed := true; changed; {
-		changed = false
-		for _, entry := range calls {
-			if len(entry.call.Args) == 0 || entry.owner == "" {
-				continue
-			}
-			forwarded := printers[entry.call.Args[0].Lit()]
-			for i, arg := range entry.call.Args[1:] {
-				if !forwarded[0] && !forwarded[i+1] {
-					continue
-				}
-				syntax.Walk(arg, func(node syntax.Node) bool {
-					if _, ok := node.(*syntax.CmdSubst); ok {
-						return false
-					}
-					if param, ok := node.(*syntax.ParamExp); ok {
-						index, err := strconv.Atoi(param.Param.Value)
-						if param.Param.Value == "@" || param.Param.Value == "*" {
-							index, err = 0, nil
-						}
-						if err == nil && (index > 0 || param.Param.Value == "@" || param.Param.Value == "*") && !printers[entry.owner][index] {
-							if printers[entry.owner] == nil {
-								printers[entry.owner] = map[int]bool{}
-							}
-							printers[entry.owner][index], changed = true, true
-						}
-					}
-					return true
-				})
-			}
-		}
+	prints := func(call *syntax.CallExpr) bool {
+		return len(call.Args) > 1 && (call.Args[0].Lit() == "echo" || call.Args[0].Lit() == "printf" && call.Args[1].Lit() != "-v")
 	}
-	var messages []example
-	for _, entry := range calls {
-		if len(entry.call.Args) == 0 {
-			continue
+	syntax.Walk(tree, func(node syntax.Node) bool {
+		function, ok := node.(*syntax.FuncDecl)
+		if !ok {
+			return true
 		}
-		name := entry.call.Args[0].Lit()
+		syntax.Walk(function.Body, func(node syntax.Node) bool {
+			switch node.(type) {
+			case *syntax.FuncDecl, *syntax.Redirect:
+				return false
+			}
+			call, ok := node.(*syntax.CallExpr)
+			if !ok {
+				return true
+			}
+			if prints(call) {
+				for _, arg := range call.Args[1:] {
+					syntax.Walk(arg, func(node syntax.Node) bool {
+						if _, ok := node.(*syntax.CmdSubst); ok {
+							return false
+						}
+						if param, ok := node.(*syntax.ParamExp); ok {
+							index, err := strconv.Atoi(param.Param.Value)
+							if param.Param.Value == "@" || param.Param.Value == "*" {
+								index, err = 0, nil
+							}
+							if err == nil && (index > 0 || param.Param.Value == "@" || param.Param.Value == "*") {
+								if printers[function.Name.Value] == nil {
+									printers[function.Name.Value] = map[int]bool{}
+								}
+								printers[function.Name.Value][index] = true
+							}
+						}
+						return true
+					})
+				}
+			}
+			return false
+		})
+		return true
+	})
+	var messages []example
+	syntax.Walk(tree, func(node syntax.Node) bool {
+		if _, ok := node.(*syntax.Redirect); ok {
+			return false
+		}
+		call, ok := node.(*syntax.CallExpr)
+		if !ok {
+			return true
+		}
+		if len(call.Args) < 2 {
+			return false
+		}
+		name := call.Args[0].Lit()
 		printed := printers[name]
-		escapes, argument := false, 0
-		for i, arg := range entry.call.Args[1:] {
-			if !printed[0] && !printed[i+1] {
+		if name == "printf" && !prints(call) {
+			return false
+		}
+		for i, arg := range call.Args[1:] {
+			if (!printed[0] && !printed[i+1]) || len(arg.Parts) != 1 {
 				continue
 			}
 			text := string(source[arg.Pos().Offset():arg.End().Offset()])
-			if name == "printf" && text == "-v" {
-				break
-			}
-			if name == "echo" && strings.HasPrefix(text, "-") {
-				if option := strings.LastIndexAny(text, "eE"); option > 0 {
-					escapes = text[option] == 'e'
-				}
-			}
 			if len(text) < 2 || text[0] != '\'' && text[0] != '"' || text[len(text)-1] != text[0] {
-				if !strings.HasPrefix(text, "-") {
-					argument++
-				}
 				continue
 			}
-			value := colorPrefix.ReplaceAllString(text[1:len(text)-1], "")
-			if arg.Pos().Line() != entry.call.Pos().Line() || strings.Contains(text, "\n") || text[0] == '"' && expands(value, false) {
-				argument++
+			value := text[1 : len(text)-1]
+			if arg.Pos().Line() != call.Pos().Line() || strings.Contains(value, "\n") || text[0] == '"' && strings.ContainsAny(value, "$`\\") {
 				continue
 			}
-			if text[0] == '"' {
-				value = strings.NewReplacer(`\\`, `\`, `\"`, `"`, `\$`, `$`, "\\`", "`").Replace(value)
-			}
-			if name == "printf" && argument == 0 || escapes {
-				value, _, _ = expand.Format(nil, strings.ReplaceAll(value, "%", "%%"), nil)
-			}
-			argument++
 			messages = append(messages, example{value, int(arg.Pos().Line())})
 		}
-	}
+		return false
+	})
 	return messages
-}
-
-func expands(value string, powershell bool) bool {
-	for i := 0; i < len(value); i++ {
-		if !powershell && value[i] == '\\' || powershell && value[i] == '`' {
-			i++
-			continue
-		}
-		if value[i] == '$' || !powershell && value[i] == '`' {
-			return true
-		}
-	}
-	return false
 }
 
 // visible returns the text a reader sees in node, so emphasis around the note still counts.
@@ -294,29 +243,15 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		blockLine := -1
 		for _, message := range messages {
-			for value := range strings.SplitSeq(termtext.StripANSI(message.text), "\n") {
-				line := message.line
-				marker, key := markerFor(line)
-				if key != blockLine {
-					flush()
-					current.marker = marker
-					blockLine = key
-				}
-				candidates := []string{value}
-				if instruction := installerInstruction.FindStringSubmatch(value); instruction != nil {
-					candidates = append(candidates, strings.Join(instruction[1:], ""))
-				}
-				for _, candidate := range candidates {
-					found := false
-					for more := true; more; _, candidate, more = strings.Cut(candidate, ":") {
-						if add(candidate, line) {
-							found = true
-							break
-						}
-					}
-					if found {
-						break
-					}
+			marker, key := markerFor(message.line)
+			if key != blockLine {
+				flush()
+				current.marker = marker
+				blockLine = key
+			}
+			for candidate, more := message.text, true; more; _, candidate, more = strings.Cut(candidate, ":") {
+				if add(candidate, message.line) {
+					break
 				}
 			}
 		}

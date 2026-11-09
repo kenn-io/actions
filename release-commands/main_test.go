@@ -70,6 +70,8 @@ func TestReleaseCommands(t *testing.T) {
 		line                                int
 		binaries                            []string
 	}{
+		{"powershell ignored parameter", ".ps1", "function Write-Info([string]$Message) { Write-Host 'Ready' }\nWrite-Info 'stub nope'", "", "", 0, []string{"stub"}},
+		{"printf assignment helper", ".sh", `remember() { printf -v message '%s' "$1"; }; remember 'stub nope'`, "", "", 0, []string{"stub"}},
 		{"missing binary output", ".md", "`stub-helper started (pid 12)`", "stub-helper: not in", "", 1, []string{"stub", "stub-helper"}},
 		{"marked output and command", ".md", "<!-- release-commands: expected-failure -->\n\n```text\nstub started (pid 12)\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 5, []string{"stub"}},
 		{"shell marker hint", ".sh", "echo 'stub nope'", `for unreleased commands, add "# Not in the latest release yet"`, "", 1, []string{"stub"}},
@@ -141,4 +143,22 @@ func TestReleaseCommandsHelpCache(t *testing.T) {
 	data, err := os.ReadFile(log)
 	require.NoError(t, err)
 	require.Equal(t, 1, strings.Count(string(data), "help run\n"))
+}
+
+func TestReleaseCommandsAction(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "-x.md"), []byte("`stub nope`"), 0o600))
+	// Supply the local archive through the same release commands CI uses.
+	gh := "#!/bin/bash\nset -eu\ncase \"$1 $2\" in\n'release view') echo v1.0.0 ;;\n'release download') cp \"$FIXTURE_ARCHIVE\" \"${@: -1}/stub.tar.gz\" ;;\n*) exit 2 ;;\nesac\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte(gh), 0o700))
+	action, err := os.ReadFile("action.yml")
+	require.NoError(t, err)
+	_, script, found := strings.Cut(string(action), "      run: |\n")
+	require.True(t, found)
+	script = strings.ReplaceAll(script, "\n        ", "\n")
+	cmd := exec.CommandContext(t.Context(), "bash", "-eu", "-c", script)
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "FIXTURE_ARCHIVE="+fixture, "GITHUB_WORKSPACE="+dir, "FILES=-x.md", "BINARIES=stub", "REPOSITORY=example/project", "ASSET=stub.tar.gz")
+	output, err := cmd.CombinedOutput()
+	require.Error(t, err)
+	require.Contains(t, string(output), `-x.md:1: stub nope: v1.0.0 has no command "nope"`)
 }
