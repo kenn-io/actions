@@ -11,8 +11,8 @@ import (
 )
 
 var shellExpansion = &expand.Config{
-	CmdSubst:  func(w io.Writer, _ *syntax.CmdSubst) error { _, err := io.WriteString(w, "0"); return err },
-	ProcSubst: func(*syntax.ProcSubst) (string, error) { return "0", nil },
+	CmdSubst:  func(w io.Writer, _ *syntax.CmdSubst) error { _, err := io.WriteString(w, "$"); return err },
+	ProcSubst: func(*syntax.ProcSubst) (string, error) { return "$", nil },
 	Env: expand.FuncEnviron(func(name string) string {
 		if name == "IFS" {
 			return ""
@@ -94,13 +94,13 @@ func commands(line string) ([][]string, error) {
 // Only unquoted, unescaped punctuation participates in synopsis syntax.
 func punctuation(source string) []int {
 	var positions []int
-	quotes := "" // closing delimiters, innermost last; ")" ends a parenthesis opened inside a quoted command substitution
+	quotes := "" // closing delimiters, innermost last; ")" ends a parenthesis opened inside a command substitution
 	for i := 0; i < len(source); i++ {
 		c, quote := source[i:i+1], quotes[max(len(quotes)-1, 0):]
 		switch {
 		case c == `\` && quote != "'":
 			i++
-		case quote == `"` && strings.HasPrefix(source[i:], "$(") || quote == ")" && c == "(":
+		case quote != "'" && strings.HasPrefix(source[i:], "$(") || quote == ")" && c == "(":
 			quotes, i = quotes+")", i+strings.IndexByte(source[i:], '(')
 		case c == quote:
 			quotes = quotes[:len(quotes)-1]

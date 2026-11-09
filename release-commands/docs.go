@@ -91,6 +91,17 @@ func code(source []byte) []byte {
 			i++
 		case quote != 0 && c == quote && quote != '<' && quote != '#':
 			quote = 0
+		case quote == 0 && c == '@' && i+1 < len(masked) && (masked[i+1] == '\'' || masked[i+1] == '"'):
+			end := bytes.Index(masked[i:], []byte{'\n', masked[i+1], '@'})
+			if end < 0 {
+				end = len(masked) - i
+			}
+			for j := i; j < i+end; j++ {
+				if masked[j] != '\n' {
+					masked[j] = ' '
+				}
+			}
+			i += end + 2
 		case quote == 0 && c == '<' && i+1 < len(masked) && masked[i+1] == '#':
 			masked[i], masked[i+1], quote = ' ', ' ', '<'
 			i++
@@ -175,7 +186,7 @@ func shellWords(call *syntax.CallExpr, source []byte, parameter *string) ([]stri
 	}
 	config := &expand.Config{}
 	if parameter != nil {
-		config.Env = expand.FuncEnviron(func(string) string { return *parameter })
+		config.Env = expand.ListEnviron("1=" + *parameter)
 	}
 	var args []string
 	for _, word := range call.Args {
@@ -195,11 +206,11 @@ func shellWords(call *syntax.CallExpr, source []byte, parameter *string) ([]stri
 		if !static {
 			return nil, false
 		}
-		value, err := expand.Literal(config, word)
+		values, err := expand.Fields(config, word)
 		if err != nil {
 			return nil, false
 		}
-		args = append(args, value)
+		args = append(args, values...)
 	}
 	return args, true
 }
@@ -381,7 +392,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 								pending += "\n"
 								continue
 							}
-							if index+1 < len(segments) {
+							if !prompted && index+1 < len(segments) {
 								following := string(segments[index+1].Bytes(source))
 								if strings.HasPrefix(strings.TrimLeft(following, " \t"), "[") && len(following) > len(strings.TrimLeft(following, " \t")) {
 									pending = pending[:commentIndex(pending)] + " "

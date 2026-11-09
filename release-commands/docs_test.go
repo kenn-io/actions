@@ -19,6 +19,9 @@ func TestExamples(t *testing.T) {
 		name, ext, source string
 		want              []expectedBlock
 	}{
+		{"powershell here-string apostrophe", ".ps1", "Write-Host @'\nDon't\nWrite-Host 'stub nope'\n'@\nWrite-Host 'stub run'", []expectedBlock{{commands: []expectedExample{{"stub run", 5}}}}},
+		{"printf helper unquoted parameter", ".sh", `info() { printf '%s\n' $1; }; info 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub", 1}}}}},
+		{"prompted bracketed output", ".md", "```console\n$ stub plain\n  [\"--bogus\"]\n```", []expectedBlock{{commands: []expectedExample{{"stub plain", 2}}}}},
 		{"joined echo operands", ".sh", `echo 'stub plain' 'stub nope'`, []expectedBlock{{commands: []expectedExample{{"stub plain stub nope", 1}}}}},
 		{"printf helper literal text", ".sh", `info() { printf 'stub nope\n%s\n' "$1"; }; info Ready`, []expectedBlock{{commands: []expectedExample{{"stub nope", 1}}}}},
 		{"printf unused operand", ".sh", `printf 'stub plain\n' 'stub nonexistent'`, []expectedBlock{{commands: []expectedExample{{"stub plain", 1}}}}},
