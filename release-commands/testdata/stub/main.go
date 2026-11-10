@@ -23,6 +23,11 @@ func main() {
 	root.AddCommand(named)
 	plain := &cobra.Command{Use: "plain", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}
 	root.AddCommand(plain)
+	hiddenParent := &cobra.Command{Use: "hiddenparent [value]", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}
+	hiddenChild := &cobra.Command{Use: "child", Hidden: true, Run: func(*cobra.Command, []string) { panic("must only ask for help") }}
+	hiddenChild.Flags().Bool("child-only", false, "Child flag")
+	hiddenParent.AddCommand(hiddenChild)
+	root.AddCommand(hiddenParent)
 	root.AddCommand(group, &cobra.Command{Use: "run <path>", Short: "Read a path", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}, &cobra.Command{Use: "unsafe <path>", DisableFlagParsing: true, Short: "Must never execute", Run: func(*cobra.Command, []string) { panic("disabled flag parsing command executed") }})
 	if filepath.Base(os.Args[0]) == "strict" {
 		root.SetHelpCommand(&cobra.Command{Use: "help [command]", RunE: func(_ *cobra.Command, args []string) error {

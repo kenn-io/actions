@@ -63,6 +63,7 @@ func TestCheck(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, arguments, finding string }{
 		{"strict leaf argument", "plain somefile", ""},
+		{"strict hidden child", "hiddenparent child --child-only", ""},
 		{"strict leaf unknown flag", "plain somefile --bogus", "unknown flag: --bogus"},
 		{"strict unknown group child", "group absent", "unknown command"},
 		{"strict child help error", "named broken", "child help failed"},

@@ -18,12 +18,11 @@ import (
 var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
 
 type usage struct {
-	output      string
-	path        []string
-	aliases     []string
-	arguments   bool
-	hasChildren bool
-	flags       *pflag.FlagSet
+	output    string
+	path      []string
+	aliases   []string
+	arguments bool
+	flags     *pflag.FlagSet
 }
 
 // NUL separates arguments because executable paths and process arguments cannot contain it.
@@ -45,7 +44,7 @@ func (cache helpCache) help(ctx context.Context, binary string, path []string) (
 	cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
 	data, err := cmd.CombinedOutput()
 	if err != nil {
-		return usage{}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(data)))
+		return usage{output: string(data)}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(data)))
 	}
 	u, err := describe(string(data), cache[binary].flags)
 	if len(u.path) > len(path)+1 {
@@ -60,7 +59,7 @@ func (cache helpCache) help(ctx context.Context, binary string, path []string) (
 func describe(output string, root *pflag.FlagSet) (usage, error) {
 	u := usage{output: output, flags: pflag.NewFlagSet("release help", pflag.ContinueOnError)}
 	u.flags.SetOutput(io.Discard)
-	inUsage := false
+	inUsage, hasChildren := false, false
 	for line := range strings.SplitSeq(output, "\n") {
 		if line == "Usage:" {
 			inUsage = true
@@ -90,9 +89,9 @@ func describe(output string, root *pflag.FlagSet) (usage, error) {
 			u.path = path
 		}
 		u.arguments = u.arguments || (!child && arguments)
-		u.hasChildren = u.hasChildren || child
+		hasChildren = hasChildren || child
 	}
-	u.arguments = u.arguments || !u.hasChildren
+	u.arguments = u.arguments || !hasChildren
 	if _, rest, ok := strings.Cut(output, "\nAliases:\n"); ok {
 		line, _, _ := strings.Cut(rest, "\n")
 		for alias := range strings.SplitSeq(line, ",") {
@@ -158,9 +157,6 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 	}
 	// Match Cobra's Find behavior before validating flags against the final page.
 	for i := 0; i < len(args); i++ {
-		if !current.hasChildren {
-			break
-		}
 		word := args[i]
 		if word == "--" {
 			break
@@ -186,6 +182,15 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 		}
 		child, err := cache.help(ctx, binary, append(slices.Clone(current.path[1:]), word))
 		if err != nil {
+			var exit *exec.ExitError
+			diagnostic := fmt.Sprintf("unknown command %q for %q", word, strings.Join(current.path, " "))
+			if current.arguments && errors.As(err, &exit) && exit.ExitCode() == 2 {
+				for line := range strings.SplitSeq(child.output, "\n") {
+					if strings.TrimPrefix(line, "Error: ") == diagnostic {
+						return current.flags.Parse(append(slices.Clone(args), ""))
+					}
+				}
+			}
 			return err
 		}
 		if n := len(current.path); child.output != current.output && len(child.path) == n+1 && slices.Equal(child.path[:n], current.path) && (child.path[n] == word || slices.Contains(child.aliases, word)) {
