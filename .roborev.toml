@@ -32,9 +32,8 @@ is not a finding. A valid finding shows a realistic input on which the action
 gives the wrong answer for what its README says it checks, or a README that
 claims more than the action does. For release-commands, an unsupported doc
 shape is out of scope unless a finding cites the repo, path, and line of a
-kenn-io README or installer on main that writes a command that way. This
-exception applies even when `Examples it reads` or `Limits` says the action
-skips that shape.
+kenn-io README or installer on main that writes a command that way, even
+when the README says the action skips that shape.
 
 ## Findings
 
