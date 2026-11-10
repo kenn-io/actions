@@ -24,6 +24,18 @@ func main() {
 	plain := &cobra.Command{Use: "plain", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}
 	root.AddCommand(plain)
 	root.AddCommand(group, &cobra.Command{Use: "run <path>", Short: "Read a path", Run: func(*cobra.Command, []string) { panic("must only ask for help") }}, &cobra.Command{Use: "unsafe <path>", DisableFlagParsing: true, Short: "Must never execute", Run: func(*cobra.Command, []string) { panic("disabled flag parsing command executed") }})
+	if filepath.Base(os.Args[0]) == "strict" {
+		root.SetHelpCommand(&cobra.Command{Use: "help [command]", RunE: func(_ *cobra.Command, args []string) error {
+			target, rest, err := root.Find(args)
+			if err != nil {
+				return err
+			}
+			if len(rest) > 0 {
+				return fmt.Errorf("unknown command %q for %q", rest[0], target.CommandPath())
+			}
+			return target.Help()
+		}})
+	}
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

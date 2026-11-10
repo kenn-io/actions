@@ -18,11 +18,12 @@ import (
 var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
 
 type usage struct {
-	output    string
-	path      []string
-	aliases   []string
-	arguments bool
-	flags     *pflag.FlagSet
+	output      string
+	path        []string
+	aliases     []string
+	arguments   bool
+	hasChildren bool
+	flags       *pflag.FlagSet
 }
 
 // NUL separates arguments because executable paths and process arguments cannot contain it.
@@ -59,7 +60,7 @@ func (cache helpCache) help(ctx context.Context, binary string, path []string) (
 func describe(output string, root *pflag.FlagSet) (usage, error) {
 	u := usage{output: output, flags: pflag.NewFlagSet("release help", pflag.ContinueOnError)}
 	u.flags.SetOutput(io.Discard)
-	inUsage, hasChildren := false, false
+	inUsage := false
 	for line := range strings.SplitSeq(output, "\n") {
 		if line == "Usage:" {
 			inUsage = true
@@ -89,9 +90,9 @@ func describe(output string, root *pflag.FlagSet) (usage, error) {
 			u.path = path
 		}
 		u.arguments = u.arguments || (!child && arguments)
-		hasChildren = hasChildren || child
+		u.hasChildren = u.hasChildren || child
 	}
-	u.arguments = u.arguments || !hasChildren
+	u.arguments = u.arguments || !u.hasChildren
 	if _, rest, ok := strings.Cut(output, "\nAliases:\n"); ok {
 		line, _, _ := strings.Cut(rest, "\n")
 		for alias := range strings.SplitSeq(line, ",") {
@@ -157,6 +158,9 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 	}
 	// Match Cobra's Find behavior before validating flags against the final page.
 	for i := 0; i < len(args); i++ {
+		if !current.hasChildren {
+			break
+		}
 		word := args[i]
 		if word == "--" {
 			break
