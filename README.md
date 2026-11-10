@@ -40,8 +40,15 @@ The preset does the following:
   timestamp. A refresh has no timestamp of its own, so with the timestamp
   requirement it would sit on a pending check forever. npm holds the refresh to
   the wait instead: a repository that turns on npm lock file maintenance must
-  set `min-release-age` in each npm project's `.npmrc` and require npm 11.10 or
-  later.
+  set `min-release-age=7` in each npm project's `.npmrc` and require npm 11.17
+  or later. That `.npmrc` also needs `min-release-age-exclude[]=@kenn-io/*`, or
+  npm refuses a kenn-io release the preset exempts. A security fix younger than
+  the wait needs its own `min-release-age-exclude[]=<name>` line, removed once
+  the release is 7 days old.
+- The same lock file exception covers pnpm and Yarn lock files, which
+  `min-release-age` does not reach. A pnpm or Yarn project keeps lock file
+  maintenance off unless it sets that package manager's own release-age setting
+  to 7 days.
 - Turns off the Dependency Dashboard. Its "Pending Status Checks" checkboxes
   open a pull request for an unaged release right away, which defeats the wait.
 
