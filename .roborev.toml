@@ -30,13 +30,10 @@ Each action's README states what the action checks and what it cannot see.
 Review the action against that statement. A gap the README names as a limit
 is not a finding. A valid finding shows a realistic input on which the action
 gives the wrong answer for what its README says it checks, or a README that
-claims more than the action does.
-
-For release-commands, `Examples it reads` and `Limits` in its README define
-the scanner's doc-shape scope. A finding asking it to read another shape is
-out of scope unless it cites the repo, path, and line of a kenn-io README or
-installer on main that shows a command written in that shape. This exception
-overrides the limit rule above. Scanner bugs in supported shapes remain findings.
+claims more than the action does. For release-commands, a finding asking the
+scanner to read a doc shape its README's `Examples it reads` doesn't list, even
+one under `Limits`, is out of scope unless it cites a kenn-io README or
+installer line on main that writes a command that way.
 
 ## Findings
 
