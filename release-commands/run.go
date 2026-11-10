@@ -182,9 +182,9 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 		}
 		child, err := cache.help(ctx, binary, append(slices.Clone(current.path[1:]), word))
 		if err != nil {
-			var exit *exec.ExitError
+			exit, ok := errors.AsType[*exec.ExitError](err)
 			diagnostic := fmt.Sprintf("unknown command %q for %q", word, strings.Join(current.path, " "))
-			if current.arguments && errors.As(err, &exit) && exit.ExitCode() == 2 {
+			if current.arguments && ok && exit.ExitCode() == 2 {
 				for line := range strings.SplitSeq(child.output, "\n") {
 					if strings.TrimPrefix(line, "Error: ") == diagnostic {
 						return current.flags.Parse(append(slices.Clone(args), ""))
