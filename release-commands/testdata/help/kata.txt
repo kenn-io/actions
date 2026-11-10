@@ -1,0 +1,16 @@
+Usage:
+  kata [flags]
+  kata [command]
+
+Flags:
+      --agent              agent output: an OK or ERR status line, then command-specific details (use in agent sessions)
+      --as string          override actor (default: $KATA_AUTHOR > $USER > git > anonymous)
+      --daemon string      named daemon catalog entry (default: KATA_SERVER, workspace, active_daemon, local)
+      --format string      output mode: human (default), json, or agent; quickstart also accepts contract
+  -h, --help               help for kata
+      --json               full JSON envelope for scripts
+      --project string     project name (default: from .kata.toml at or above --workspace)
+  -q, --quiet              suppress non-essential output
+      --teammate string    teammate attribution (default: $KATA_TEAMMATE; empty suppresses inheritance)
+      --version            print version information
+      --workspace string   path used for project resolution (default: cwd)

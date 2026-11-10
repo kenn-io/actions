@@ -1,0 +1,60 @@
+name: Released commands
+description: Check documented commands against the latest release's Linux amd64 binaries.
+inputs:
+  files:
+    description: Markdown and installer paths relative to the workspace, one per line.
+    required: true
+  binaries:
+    description: Binary names in the release archive, one per line.
+    required: true
+  asset:
+    description: Glob matching exactly one Linux amd64 tar.gz release asset.
+    required: true
+  repository:
+    description: Repository whose latest release supplies the binaries.
+    default: ${{ github.repository }}
+  github-token:
+    description: Token with read access to releases.
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v7.0.0 # jactionlint ignore=unpinned-uses
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+    - name: Check release commands
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPOSITORY: ${{ inputs.repository }}
+        ASSET: ${{ inputs.asset }}
+        FILES: ${{ inputs.files }}
+        BINARIES: ${{ inputs.binaries }}
+      run: |
+        if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
+          echo 'Use a Linux amd64 runner for release-commands' >&2
+          exit 1
+        fi
+        directory=$(mktemp -d)
+        trap 'rm -rf -- "$directory"' EXIT
+        tag=$(gh release view --repo "$REPOSITORY" --json tagName --jq .tagName)
+        gh release download "$tag" --repo "$REPOSITORY" --pattern "$ASSET" --dir "$directory"
+        shopt -s nullglob
+        archives=("$directory"/*)
+        if [[ ${#archives[@]} != 1 ]]; then
+          echo 'Expected exactly one release archive' >&2
+          exit 1
+        fi
+        args=(--release "$tag" --archive "${archives[0]}")
+        while IFS= read -r binary; do
+          [[ -z "$binary" ]] || args+=(--binary "$binary")
+        done <<< "$BINARIES"
+        args+=(--)
+        while IFS= read -r file; do
+          [[ -z "$file" ]] || args+=("$file")
+        done <<< "$FILES"
+        go build -o "$directory/release-commands" .
+        cd "$GITHUB_WORKSPACE"
+        "$directory/release-commands" "${args[@]}"
