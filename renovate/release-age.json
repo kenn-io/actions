@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Hold every third-party release for 7 days before Renovate proposes it. kenn-io releases and security fixes are exempt.",
+  "description": "Hold every third-party release for 7 days before Renovate proposes it. kenn-io releases and security fixes are exempt. Exclude TypeScript 7.0.x for svelte-check.",
   "dependencyDashboard": false,
   "minimumReleaseAge": "7 days",
   "minimumReleaseAgeBehaviour": "timestamp-required",
@@ -11,6 +11,12 @@
     "schedule": ["at any time"]
   },
   "packageRules": [
+    {
+      "description": "TypeScript 7.0 does not expose the compiler API that svelte-check needs. Explicit native aliases are unaffected.",
+      "matchDepNames": ["typescript"],
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "!/^(7\\.0\\.)/"
+    },
     {
       "description": "kenn-io releases open right away: no release-age wait and no weekly window.",
       "matchPackageNames": [
