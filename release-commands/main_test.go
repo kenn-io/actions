@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var fixture, fixtureBinary string
+var fixture, fixtureBinary, strictFixtureBinary string
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "release-fixture-*")
@@ -28,6 +28,10 @@ func TestMain(m *testing.M) {
 	cmd := exec.CommandContext(context.Background(), "go", "build", "-o", fixtureBinary, "./testdata/stub")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		panic(fmt.Sprintf("%s: %v", output, err))
+	}
+	strictFixtureBinary = filepath.Join(dir, "strict")
+	if err := os.Link(fixtureBinary, strictFixtureBinary); err != nil {
+		panic(err)
 	}
 	fixture = filepath.Join(dir, "stub_1.0.0_linux_amd64.tar.gz")
 	data, err := os.ReadFile(fixtureBinary)

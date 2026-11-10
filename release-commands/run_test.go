@@ -62,6 +62,23 @@ func TestDescribe(t *testing.T) {
 func TestCheck(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, arguments, finding string }{
+		{"strict leaf argument", "plain somefile", ""},
+		{"strict hidden child", "hiddenparent child --child-only", ""},
+		{"strict leaf unknown flag", "plain somefile --bogus", "unknown flag: --bogus"},
+		{"strict unknown group child", "group absent", "unknown command"},
+		{"strict child help error", "named broken", "child help failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := (helpCache{}).check(t.Context(), strictFixtureBinary, strings.Fields(test.arguments))
+			if test.finding == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.finding)
+			}
+		})
+	}
+	for _, test := range []struct{ name, arguments, finding string }{
 		{"disabled flag parsing", "unsafe file --help=false", ""},
 		{"lowercase symbolic child", "group $child", ""},
 		{"lowercase symbolic argument flag", "plain $path --bogus", "unknown flag: --bogus"},

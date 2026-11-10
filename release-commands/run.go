@@ -44,7 +44,7 @@ func (cache helpCache) help(ctx context.Context, binary string, path []string) (
 	cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
 	data, err := cmd.CombinedOutput()
 	if err != nil {
-		return usage{}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(data)))
+		return usage{output: string(data)}, fmt.Errorf("help %s: %w: %s", strings.Join(path, " "), err, strings.TrimSpace(string(data)))
 	}
 	u, err := describe(string(data), cache[binary].flags)
 	if len(u.path) > len(path)+1 {
@@ -182,6 +182,15 @@ func (cache helpCache) check(ctx context.Context, binary string, args []string) 
 		}
 		child, err := cache.help(ctx, binary, append(slices.Clone(current.path[1:]), word))
 		if err != nil {
+			exit, ok := errors.AsType[*exec.ExitError](err)
+			diagnostic := fmt.Sprintf("unknown command %q for %q", word, strings.Join(current.path, " "))
+			if current.arguments && ok && exit.ExitCode() == 2 {
+				for line := range strings.SplitSeq(child.output, "\n") {
+					if strings.TrimPrefix(line, "Error: ") == diagnostic {
+						return current.flags.Parse(append(slices.Clone(args), ""))
+					}
+				}
+			}
 			return err
 		}
 		if n := len(current.path); child.output != current.output && len(child.path) == n+1 && slices.Equal(child.path[:n], current.path) && (child.path[n] == word || slices.Contains(child.aliases, word)) {
