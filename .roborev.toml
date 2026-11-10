@@ -28,13 +28,12 @@ This repository's own CI runs on pull_request with contents: read.
 
 Each action's README states what the action checks and what it cannot see.
 Review the action against that statement. A gap the README names as a limit
-is not a finding, except as the release-commands rule below says. A valid
-finding shows a realistic input on which the action gives the wrong answer for
-what its README says it checks, or a README that
-claims more than the action does. For release-commands, an unsupported doc
-shape is out of scope unless a finding cites the repo, path, and line of a
-kenn-io README or installer on main that writes a command that way, even
-when the README says the action skips that shape.
+is not a finding, except as the release-commands rule below allows. A valid
+finding shows a realistic input on which the action gives the wrong answer
+for what its README says it checks, or a README that claims more than the
+action does. For release-commands, an unsupported or skipped doc shape is
+out of scope unless a finding cites the repo, path, and line of a kenn-io
+README or installer on main that writes a command that way.
 
 ## Findings
 
