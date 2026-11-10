@@ -36,12 +36,20 @@ The preset does the following:
   `github.com/kenn-io/*` modules, `@kenn-io/*` packages, and
   `ghcr.io/kenn-io/*` images) from the wait and from the repository's schedule.
 - Exempts security fixes from the wait and the schedule.
+- Lets an npm lock file refresh (`lockFileMaintenance`) open without a release
+  timestamp. A refresh has no timestamp of its own, so with the timestamp
+  requirement it would sit on a pending check forever. npm holds the refresh to
+  the wait instead: a repository that turns on npm lock file maintenance must
+  set `min-release-age` in each npm project's `.npmrc` and require npm 11.10 or
+  later.
 - Turns off the Dependency Dashboard. Its "Pending Status Checks" checkboxes
   open a pull request for an unaged release right away, which defeats the wait.
 
-A repository that needs the dashboard, for example for
-`dependencyDashboardApproval`, sets `"dependencyDashboard": true` itself. Do not
-tick its "Pending Status Checks" checkboxes.
+Keep the release-age settings in this preset. A repository does not override
+them, and it does not turn the Dependency Dashboard back on. An update that
+needs a person before it can merge, such as a version with a checksum Renovate
+cannot update, gets `"enabled": false` in the repository's config and is updated
+by hand.
 
 ## Development
 
