@@ -30,7 +30,9 @@ Each action's README states what the action checks and what it cannot see.
 Review the action against that statement. A gap the README names as a limit
 is not a finding. A valid finding shows a realistic input on which the action
 gives the wrong answer for what its README says it checks, or a README that
-claims more than the action does.
+claims more than the action does. For release-commands, a finding may also
+request an unsupported doc shape if it cites a kenn-io README or installer on
+main that uses it, even when the action's README names it as a limit.
 
 ## Findings
 
