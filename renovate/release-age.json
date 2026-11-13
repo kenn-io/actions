@@ -5,6 +5,11 @@
   "minimumReleaseAge": "7 days",
   "minimumReleaseAgeBehaviour": "timestamp-required",
   "internalChecksFilter": "strict",
+  "npm": {
+    "lockFileMaintenance": {
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    }
+  },
   "vulnerabilityAlerts": {
     "minimumReleaseAge": null,
     "prCreation": "immediate",
