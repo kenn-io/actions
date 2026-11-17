@@ -139,6 +139,7 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 	require.Equal(t, 1, comparisons)
 	for n, finding := range results {
 		require.Equal(t, pins[n], finding.Pin, "retain the original file evidence")
+		require.Equal(t, "v0.14.3", finding.Revision)
 		require.Contains(t, finding.Problem, "v0.14.3")
 	}
 }
