@@ -128,11 +128,11 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 		{File: "bun.lock", Repo: "kata", Ref: "c668572", Source: "bun.lock: tag object"},
 		{File: "web/bun.lock", Repo: "kata", Ref: "c668572", Source: "web/bun.lock: tag object"},
 	}
-	findings, err := github.Check(t.Context(), pins)
+	results, err = github.CheckResults(t.Context(), pins)
 	require.NoError(t, err)
-	require.Len(t, findings, 2)
-	for n, finding := range findings {
-		require.Equal(t, pins[n], finding.Pin, "retain the original file evidence")
-		require.Equal(t, "v0.14.3", finding.Revision, "callers must look up the revision GitHub compared")
+	require.Len(t, results, 2)
+	for _, result := range results {
+		require.Equal(t, "v0.14.3", result.Revision, "callers must look up the revision GitHub compared")
+		require.Contains(t, result.Problem, "v0.14.3")
 	}
 }
