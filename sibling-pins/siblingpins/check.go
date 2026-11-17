@@ -65,7 +65,7 @@ func (g GitHub) Check(ctx context.Context, pins []Pin) ([]Finding, error) {
 func (g GitHub) CheckResults(ctx context.Context, pins []Pin) ([]Finding, error) {
 	type key struct{ repo, ref string }
 	verdicts := make(map[key]Finding)
-	var results []Finding
+	var findings []Finding
 	for _, pin := range pins {
 		k := key{pin.Repo, pin.Ref}
 		finding, seen := verdicts[k]
@@ -77,9 +77,9 @@ func (g GitHub) CheckResults(ctx context.Context, pins []Pin) ([]Finding, error)
 			}
 			verdicts[k] = finding
 		}
-		results = append(results, Finding{Pin: pin, Revision: finding.Revision, Problem: finding.Problem})
+		findings = append(findings, Finding{Pin: pin, Revision: finding.Revision, Problem: finding.Problem})
 	}
-	return results, nil
+	return findings, nil
 }
 
 // comparison is the part of a GitHub compare response the check reads.
