@@ -59,7 +59,7 @@ func (g GitHub) Check(ctx context.Context, pins []Pin) ([]Finding, error) {
 }
 
 // CheckResults returns every pin and the revision compared, in input order.
-// Pins naming the same revision share one request. An error reports a failure
+// Pins naming the same revision share one check. An error reports a failure
 // to ask GitHub and returns no results.
 func (g GitHub) CheckResults(ctx context.Context, pins []Pin) ([]Finding, error) {
 	type key struct{ repo, ref string }
