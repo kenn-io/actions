@@ -46,16 +46,13 @@ func (f Finding) String() string {
 // The error reports failures to ask GitHub, not off-main pins.
 func (g GitHub) Check(ctx context.Context, pins []Pin) ([]Finding, error) {
 	results, err := g.CheckResults(ctx, pins)
-	if err != nil {
-		return nil, err
-	}
 	var findings []Finding
 	for _, result := range results {
 		if result.Problem != "" {
 			findings = append(findings, result)
 		}
 	}
-	return findings, nil
+	return findings, err
 }
 
 // CheckResults returns every pin and the revision compared, in input order.

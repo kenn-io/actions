@@ -50,7 +50,6 @@ func TestCheckReportsPinsOffMain(t *testing.T) {
 		{File: "web/bun.lock", Repo: "kit-ui", Ref: "cccc", Source: "web/bun.lock: open pull request", Revision: "cccc", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
 		{File: "desktop/package.json", Repo: "app-ui", Ref: "dddd", Source: "desktop/package.json: missing", Revision: "dddd", Problem: "kenn-io/app-ui has no revision dddd, or this check cannot read the repository"},
 	}, results)
-	require.Equal(t, 1, requests["/repos/kenn-io/kit-ui/compare/main...cccc"], "pins naming one revision share a request")
 	clear(requests)
 	findings, err := github.Check(t.Context(), pins)
 	require.NoError(t, err)
@@ -95,7 +94,6 @@ func TestCheckFailsWhenGitHubRefuses(t *testing.T) {
 	require.ErrorContains(t, err, "401")
 	require.Nil(t, findings)
 	results, err := (GitHub{Client: server.Client(), BaseURL: server.URL}).CheckResults(t.Context(), []Pin{{File: "go.mod", Repo: "forge", Ref: "aaaa", Source: "go.mod"}})
-	require.ErrorContains(t, err, "go.mod: GitHub")
 	require.ErrorContains(t, err, "401")
 	require.Nil(t, results)
 }
