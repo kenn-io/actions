@@ -120,3 +120,4 @@ GH_TOKEN="$(gh auth token)" go run go.kenn.io/actions/sibling-pins@<commit> --ro
 
 Go programs can import `go.kenn.io/actions/sibling-pins/siblingpins`, call
 `Collect`, and pass the pins to `GitHub.Check` for structured findings.
+`GitHub.CheckResults` returns every pin with the revision compared.
