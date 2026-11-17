@@ -31,6 +31,7 @@ type GitHub struct {
 
 // Finding describes a checked pin. Problem is empty when the pin is on main.
 // Revision is the pin's ref or the tag named by its annotated-tag object hash.
+// A tag name can move and is not a stable object identity.
 type Finding struct {
 	Pin
 	Revision string // Revision actually compared; Ref retains the pin's file evidence.
@@ -38,6 +39,9 @@ type Finding struct {
 }
 
 func (f Finding) String() string {
+	if f.Problem == "" {
+		return f.Source
+	}
 	return f.Source + ": " + f.Problem
 }
 

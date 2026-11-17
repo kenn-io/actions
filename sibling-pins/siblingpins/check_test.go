@@ -50,6 +50,7 @@ func TestCheckReportsPinsOffMain(t *testing.T) {
 		{File: "web/bun.lock", Repo: "kit-ui", Ref: "cccc", Source: "web/bun.lock: open pull request", Revision: "cccc", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
 		{File: "desktop/package.json", Repo: "app-ui", Ref: "dddd", Source: "desktop/package.json: missing", Revision: "dddd", Problem: "kenn-io/app-ui has no revision dddd, or this check cannot read the repository"},
 	}, results)
+	require.Equal(t, "go.mod: on main", results[0].String())
 	require.Equal(t, 1, requests["/repos/kenn-io/kit-ui/compare/main...cccc"], "pins naming one revision share a request")
 	findings, err := github.Check(t.Context(), pins)
 	require.NoError(t, err)
