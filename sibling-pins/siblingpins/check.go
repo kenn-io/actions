@@ -29,7 +29,9 @@ type GitHub struct {
 	Token   string
 }
 
-// Finding describes a pin that is not on its sibling's main branch.
+// Finding describes a checked pin. Problem is empty when the pin is on main.
+// Revision is the pin's ref or the tag named by its annotated-tag object hash.
+// A tag name can move and is not a stable object identity.
 type Finding struct {
 	Pin
 	Revision string // Revision actually compared; Ref retains the pin's file evidence.
@@ -37,6 +39,9 @@ type Finding struct {
 }
 
 func (f Finding) String() string {
+	if f.Problem == "" {
+		return f.Source
+	}
 	return f.Source + ": " + f.Problem
 }
 
@@ -44,6 +49,20 @@ func (f Finding) String() string {
 // repository's main branch. Pins naming the same revision share one request.
 // The error reports failures to ask GitHub, not off-main pins.
 func (g GitHub) Check(ctx context.Context, pins []Pin) ([]Finding, error) {
+	results, err := g.CheckResults(ctx, pins)
+	var findings []Finding
+	for _, result := range results {
+		if result.Problem != "" {
+			findings = append(findings, result)
+		}
+	}
+	return findings, err
+}
+
+// CheckResults returns every pin and the revision compared, in input order.
+// Pins naming the same revision share one check. An error reports a failure
+// to ask GitHub and returns no results.
+func (g GitHub) CheckResults(ctx context.Context, pins []Pin) ([]Finding, error) {
 	type key struct{ repo, ref string }
 	verdicts := make(map[key]Finding)
 	var findings []Finding
@@ -58,9 +77,7 @@ func (g GitHub) Check(ctx context.Context, pins []Pin) ([]Finding, error) {
 			}
 			verdicts[k] = finding
 		}
-		if finding.Problem != "" {
-			findings = append(findings, Finding{Pin: pin, Revision: finding.Revision, Problem: finding.Problem})
-		}
+		findings = append(findings, Finding{Pin: pin, Revision: finding.Revision, Problem: finding.Problem})
 	}
 	return findings, nil
 }

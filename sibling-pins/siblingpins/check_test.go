@@ -31,24 +31,32 @@ func TestCheckReportsPinsOffMain(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	findings, err := GitHub{Client: server.Client(), BaseURL: server.URL, Token: "read-token"}.Check(t.Context(), []Pin{
+	pins := []Pin{
 		{File: "go.mod", Repo: "forge", Ref: "aaaa", Source: "go.mod: on main"},
 		{File: "go.mod", Repo: "kit", Ref: "v0.38.0", Source: "go.mod: tag on main"},
 		{File: "go.mod", Repo: "forge", Ref: "bbbb", Source: "go.mod: squashed pull request head"},
 		{File: "web/package.json", Repo: "kit-ui", Ref: "cccc", Source: "web/package.json: open pull request"},
 		{File: "web/bun.lock", Repo: "kit-ui", Ref: "cccc", Source: "web/bun.lock: open pull request"},
 		{File: "desktop/package.json", Repo: "app-ui", Ref: "dddd", Source: "desktop/package.json: missing"},
-	})
+	}
+	github := GitHub{Client: server.Client(), BaseURL: server.URL, Token: "read-token"}
+	results, err := github.CheckResults(t.Context(), pins)
 	require.NoError(t, err)
 	require.Equal(t, []Finding{
+		{File: "go.mod", Repo: "forge", Ref: "aaaa", Source: "go.mod: on main", Revision: "aaaa"},
+		{File: "go.mod", Repo: "kit", Ref: "v0.38.0", Source: "go.mod: tag on main", Revision: "v0.38.0"},
 		{File: "go.mod", Repo: "forge", Ref: "bbbb", Source: "go.mod: squashed pull request head", Revision: "bbbb", Problem: "bbbb is not on kenn-io/forge main (unmerged commits: 1); pin a commit on main instead"},
 		{File: "web/package.json", Repo: "kit-ui", Ref: "cccc", Source: "web/package.json: open pull request", Revision: "cccc", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
 		{File: "web/bun.lock", Repo: "kit-ui", Ref: "cccc", Source: "web/bun.lock: open pull request", Revision: "cccc", Problem: "cccc is not on kenn-io/kit-ui main (unmerged commits: 2); pin a commit on main instead"},
 		{File: "desktop/package.json", Repo: "app-ui", Ref: "dddd", Source: "desktop/package.json: missing", Revision: "dddd", Problem: "kenn-io/app-ui has no revision dddd, or this check cannot read the repository"},
-	}, findings)
+	}, results)
+	require.Equal(t, "go.mod: on main", results[0].String())
+	require.Equal(t, 1, requests["/repos/kenn-io/kit-ui/compare/main...cccc"], "pins naming one revision share a request")
+	findings, err := github.Check(t.Context(), pins)
+	require.NoError(t, err)
+	require.Equal(t, results[2:], findings)
 	// Findings render the file, dependency, and problem for CLI output.
 	require.Equal(t, "go.mod: squashed pull request head: bbbb is not on kenn-io/forge main (unmerged commits: 1); pin a commit on main instead", findings[0].String())
-	require.Equal(t, 1, requests["/repos/kenn-io/kit-ui/compare/main...cccc"], "pins naming one revision share a request")
 }
 
 func TestCheckRetriesServerErrors(t *testing.T) {
@@ -80,6 +88,9 @@ func TestCheckFailsWhenGitHubRefuses(t *testing.T) {
 	findings, err := GitHub{Client: server.Client(), BaseURL: server.URL}.Check(t.Context(), []Pin{{File: "go.mod", Repo: "forge", Ref: "aaaa", Source: "go.mod"}})
 	require.ErrorContains(t, err, "401")
 	require.Nil(t, findings)
+	results, err := GitHub{Client: server.Client(), BaseURL: server.URL}.CheckResults(t.Context(), []Pin{{File: "go.mod", Repo: "forge", Ref: "aaaa", Source: "go.mod"}})
+	require.ErrorContains(t, err, "401")
+	require.Nil(t, results)
 }
 
 // Bun records a tag dependency by the tag object's hash. The check finds the
@@ -101,24 +112,27 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	findings, err := GitHub{Client: server.Client(), BaseURL: server.URL}.Check(t.Context(), []Pin{
+	pins := []Pin{
 		{File: "bun.lock", Repo: "kata", Ref: "c668572", Source: "bun.lock: tag object"},
 		{File: "bun.lock", Repo: "kata", Ref: "0123456", Source: "bun.lock: unknown hash"},
-	})
+	}
+	github := GitHub{Client: server.Client(), BaseURL: server.URL}
+	results, err := github.CheckResults(t.Context(), pins)
 	require.NoError(t, err)
 	require.Equal(t, []Finding{
+		{File: "bun.lock", Repo: "kata", Ref: "c668572", Source: "bun.lock: tag object", Revision: "v0.14.3"},
 		{File: "bun.lock", Repo: "kata", Ref: "0123456", Source: "bun.lock: unknown hash", Revision: "0123456", Problem: "kenn-io/kata has no revision 0123456, or this check cannot read the repository"},
-	}, findings)
+	}, results)
 	status = "ahead"
-	pins := []Pin{
+	pins = []Pin{
 		{File: "bun.lock", Repo: "kata", Ref: "c668572", Source: "bun.lock: tag object"},
 		{File: "web/bun.lock", Repo: "kata", Ref: "c668572", Source: "web/bun.lock: tag object"},
 	}
-	findings, err = (GitHub{Client: server.Client(), BaseURL: server.URL}).Check(t.Context(), pins)
+	results, err = github.CheckResults(t.Context(), pins)
 	require.NoError(t, err)
-	require.Len(t, findings, 2)
-	for n, finding := range findings {
-		require.Equal(t, pins[n], finding.Pin, "retain the original file evidence")
-		require.Equal(t, "v0.14.3", finding.Revision, "callers must look up the revision GitHub compared")
+	require.Len(t, results, 2)
+	for _, result := range results {
+		require.Equal(t, "v0.14.3", result.Revision, "callers must look up the revision GitHub compared")
+		require.Contains(t, result.Problem, "v0.14.3")
 	}
 }
