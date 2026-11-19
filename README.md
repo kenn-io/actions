@@ -36,19 +36,11 @@ The preset does the following:
   `github.com/kenn-io/*` modules, `@kenn-io/*` packages, and
   `ghcr.io/kenn-io/*` images) from the wait and from the repository's schedule.
 - Exempts security fixes from the wait and the schedule.
-- Lets an npm lock file refresh (`lockFileMaintenance`) open without a release
-  timestamp. A refresh has no timestamp of its own, so with the timestamp
-  requirement it would sit on a pending check forever. npm holds the refresh to
-  the wait instead: a repository that turns on npm lock file maintenance must
-  set `min-release-age=7` in each npm project's `.npmrc` and require npm 11.17
-  or later. That `.npmrc` also needs `min-release-age-exclude[]=@kenn-io/*`, or
-  npm refuses a kenn-io release the preset exempts. A security fix younger than
-  the wait needs its own `min-release-age-exclude[]=<name>` line, removed once
-  the release is 7 days old.
-- The same lock file exception covers pnpm and Yarn lock files, which
-  `min-release-age` does not reach. A pnpm or Yarn project keeps lock file
-  maintenance off unless it sets that package manager's own release-age setting
-  to 7 days.
+- Lets a lock file refresh (`lockFileMaintenance`) for npm, pnpm, Yarn, or Bun
+  open without a release timestamp. A refresh has no timestamp of its own, so
+  with the timestamp requirement it would sit on a pending check forever. The
+  package manager holds the refresh to the wait instead, as
+  [Package manager release age](#package-manager-release-age) describes.
 - Turns off the Dependency Dashboard. Its "Pending Status Checks" checkboxes
   open a pull request for an unaged release right away, which defeats the wait.
 - Excludes TypeScript `7.0.x`, including prereleases, because it lacks the
@@ -63,10 +55,38 @@ constraint on their next Renovate run after it merges. Equivalent local
 valid and should stay in place.
 
 Keep the release-age settings in this preset. A repository does not override
-them, and it does not turn the Dependency Dashboard back on. An update that
-needs a person before it can merge, such as a version with a checksum Renovate
-cannot update, gets `"enabled": false` in the repository's config and is updated
-by hand.
+them, and it does not turn the Dependency Dashboard back on. When Renovate
+cannot finish an update, such as a version with a checksum it cannot update,
+the repository keeps the update enabled and says in the rule's `description`
+what to fix on the branch before merging.
+
+### Package manager release age
+
+Renovate's wait covers the versions it proposes. It does not cover the
+transitive packages a package manager picks while it rewrites a lock file, or
+anything a person installs by hand. Every JavaScript project sets its package
+manager's own 7-day limit next to its lock file:
+
+| Package manager | File | Setting |
+| --- | --- | --- |
+| npm 11.10 or later | `.npmrc` | `min-release-age=7` (days) |
+| Bun | `bunfig.toml` | `minimumReleaseAge = 604800` under `[install]` (seconds) |
+| pnpm 10.16 or later | `pnpm-workspace.yaml` | `minimumReleaseAge: 10080` (minutes) |
+
+Renovate gives npm a `--before` date of its own, but it drops that date without
+failing when an exact pin is too young. With `min-release-age` in `.npmrc`,
+Renovate leaves the limit to npm. Renovate gives Bun and pnpm no limit at all.
+
+The limit applies only when the package manager picks versions. A frozen
+install, such as `npm ci` or `bun install --frozen-lockfile`, installs the
+locked versions as they are.
+
+A security fix younger than 7 days needs an exclusion for the fixed package,
+removed once the release is 7 days old: `min-release-age-exclude[]=<name>` in
+`.npmrc` (npm 11.17 or later), `minimumReleaseAgeExcludes` in `bunfig.toml`, or
+`minimumReleaseAgeExclude` in `pnpm-workspace.yaml`. A project that installs a
+`@kenn-io/*` package from a registry excludes those packages the same way, or
+the package manager refuses a kenn-io release the preset exempts.
 
 ## Development
 
