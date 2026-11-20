@@ -129,27 +129,24 @@ func (g GitHub) offMain(ctx context.Context, repo, ref string) (string, string, 
 // tagForObject returns the tag whose ref points at an annotated tag object
 // with the abbreviated hash, or "" when none does.
 func (g GitHub) tagForObject(ctx context.Context, repo, hash string) (string, error) {
-	for page := 1; ; page++ {
-		var refs []struct {
-			Ref    string `json:"ref"`
-			Object struct {
-				Type string `json:"type"`
-				SHA  string `json:"sha"`
-			} `json:"object"`
-		}
-		found, err := g.get(ctx, fmt.Sprintf("/repos/%s/%s/git/matching-refs/tags?per_page=100&page=%d", Owner, repo, page), &refs)
-		if err != nil || !found || len(refs) == 0 {
-			return "", err
-		}
-		for _, ref := range refs {
-			if ref.Object.Type == "tag" && strings.HasPrefix(ref.Object.SHA, hash) {
-				return strings.TrimPrefix(ref.Ref, "refs/tags/"), nil
-			}
-		}
-		if len(refs) < 100 {
-			return "", nil
+	var refs []struct {
+		Ref    string `json:"ref"`
+		Object struct {
+			Type string `json:"type"`
+			SHA  string `json:"sha"`
+		} `json:"object"`
+	}
+	// Matching refs returns all matches and does not support pagination.
+	found, err := g.get(ctx, fmt.Sprintf("/repos/%s/%s/git/matching-refs/tags", Owner, repo), &refs)
+	if err != nil || !found {
+		return "", err
+	}
+	for _, ref := range refs {
+		if ref.Object.Type == "tag" && strings.HasPrefix(ref.Object.SHA, hash) {
+			return strings.TrimPrefix(ref.Ref, "refs/tags/"), nil
 		}
 	}
+	return "", nil
 }
 
 // get decodes one GitHub API response into out. It returns found false for

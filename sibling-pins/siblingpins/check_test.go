@@ -1,8 +1,10 @@
 package siblingpins
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -134,5 +136,54 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 	for _, result := range results {
 		require.Equal(t, "v0.14.3", result.Revision, "callers must look up the revision GitHub compared")
 		require.Contains(t, result.Problem, "v0.14.3")
+	}
+}
+
+func TestCheckScansAllMatchingRefsOnce(t *testing.T) {
+	for _, match := range []bool{false, true} {
+		t.Run(fmt.Sprint(match), func(t *testing.T) {
+			const hash = "abcdef12"
+			calls := 0
+			var refs strings.Builder
+			refs.WriteByte('[')
+			for i := range 101 {
+				if i > 0 {
+					refs.WriteByte(',')
+				}
+				sha := strings.Repeat("1", 40)
+				if match && i == 100 {
+					sha = hash + strings.Repeat("2", 32)
+				}
+				fmt.Fprintf(&refs, `{"ref":"refs/tags/v%d","object":{"type":"tag","sha":"%s"}}`, i, sha)
+			}
+			refs.WriteByte(']')
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/repos/kenn-io/kata/git/matching-refs/tags":
+					calls++
+					if calls > 1 {
+						_, _ = w.Write([]byte(`[]`))
+						return
+					}
+					_, _ = w.Write([]byte(refs.String()))
+				case "/repos/kenn-io/kata/compare/main...v100":
+					_, _ = w.Write([]byte(`{"status":"behind","ahead_by":0}`))
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(server.Close)
+			github := GitHub{Client: server.Client(), BaseURL: server.URL}
+			results, err := github.CheckResults(t.Context(), []Pin{{Repo: "kata", Ref: hash}})
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			if match {
+				require.Equal(t, "v100", results[0].Revision)
+				require.Empty(t, results[0].Problem)
+			} else {
+				require.Contains(t, results[0].Problem, "has no revision "+hash)
+			}
+			require.Equal(t, 1, calls)
+		})
 	}
 }
