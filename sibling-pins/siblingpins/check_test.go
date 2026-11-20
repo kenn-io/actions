@@ -99,13 +99,23 @@ func TestCheckFailsWhenGitHubRefuses(t *testing.T) {
 // tag that points at it, and a hash no tag points at still fails.
 func TestCheckResolvesTagObjectHashes(t *testing.T) {
 	status := "behind"
+	var refs strings.Builder
+	refs.WriteByte('[')
+	for i := range 100 {
+		fmt.Fprintf(&refs, `{"ref":"refs/tags/filler%d","object":{"type":"tag","sha":"%040x"}},`, i, i+1)
+	}
+	refs.WriteString(`{"ref":"refs/tags/v0.14.2","object":{"type":"commit","sha":"c6685725ffffffffffffffffffffffffffffffff"}},`)
+	refs.WriteString(`{"ref":"refs/tags/v0.14.3","object":{"type":"tag","sha":"c6685725ecd6a31aaea83cf98908e0c866c5d434"}}]`)
+	var queries []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/kenn-io/kata/git/matching-refs/tags":
-			_, _ = w.Write([]byte(`[
-				{"ref":"refs/tags/v0.14.2","object":{"type":"commit","sha":"c6685725ffffffffffffffffffffffffffffffff"}},
-				{"ref":"refs/tags/v0.14.3","object":{"type":"tag","sha":"c6685725ecd6a31aaea83cf98908e0c866c5d434"}}
-			]`))
+			queries = append(queries, r.URL.RawQuery)
+			if r.URL.Query().Get("page") == "2" {
+				_, _ = w.Write([]byte(`[]`))
+			} else {
+				_, _ = w.Write([]byte(refs.String()))
+			}
 		case "/repos/kenn-io/kata/compare/main...v0.14.3":
 			_, _ = w.Write([]byte(`{"status":"` + status + `","ahead_by":1}`))
 		default:
@@ -137,56 +147,6 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 		require.Equal(t, "v0.14.3", result.Revision, "callers must look up the revision GitHub compared")
 		require.Contains(t, result.Problem, "v0.14.3")
 	}
-}
-
-func TestCheckScansAllMatchingRefsOnce(t *testing.T) {
-	for _, match := range []bool{false, true} {
-		t.Run(fmt.Sprint(match), func(t *testing.T) {
-			const hash = "abcdef12"
-			calls := 0
-			var query string
-			var refs strings.Builder
-			refs.WriteByte('[')
-			for i := range 101 {
-				if i > 0 {
-					refs.WriteByte(',')
-				}
-				sha := strings.Repeat("1", 40)
-				if match && i == 100 {
-					sha = hash + strings.Repeat("2", 32)
-				}
-				fmt.Fprintf(&refs, `{"ref":"refs/tags/v%d","object":{"type":"tag","sha":"%s"}}`, i, sha)
-			}
-			refs.WriteByte(']')
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/repos/kenn-io/kata/git/matching-refs/tags":
-					calls++
-					query = r.URL.RawQuery
-					if calls > 1 {
-						_, _ = w.Write([]byte(`[]`))
-						return
-					}
-					_, _ = w.Write([]byte(refs.String()))
-				case "/repos/kenn-io/kata/compare/main...v100":
-					_, _ = w.Write([]byte(`{"status":"behind","ahead_by":0}`))
-				default:
-					w.WriteHeader(http.StatusNotFound)
-				}
-			}))
-			t.Cleanup(server.Close)
-			github := GitHub{Client: server.Client(), BaseURL: server.URL}
-			results, err := github.CheckResults(t.Context(), []Pin{{Repo: "kata", Ref: hash}})
-			require.NoError(t, err)
-			require.Len(t, results, 1)
-			if match {
-				require.Equal(t, "v100", results[0].Revision)
-				require.Empty(t, results[0].Problem)
-			} else {
-				require.Contains(t, results[0].Problem, "has no revision "+hash)
-			}
-			require.Equal(t, 1, calls)
-			require.Empty(t, query)
-		})
-	}
+	require.Len(t, queries, 3)
+	require.Equal(t, []string{"", "", ""}, queries)
 }
