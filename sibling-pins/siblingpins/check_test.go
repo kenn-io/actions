@@ -144,6 +144,7 @@ func TestCheckScansAllMatchingRefsOnce(t *testing.T) {
 		t.Run(fmt.Sprint(match), func(t *testing.T) {
 			const hash = "abcdef12"
 			calls := 0
+			var query string
 			var refs strings.Builder
 			refs.WriteByte('[')
 			for i := range 101 {
@@ -161,6 +162,7 @@ func TestCheckScansAllMatchingRefsOnce(t *testing.T) {
 				switch r.URL.Path {
 				case "/repos/kenn-io/kata/git/matching-refs/tags":
 					calls++
+					query = r.URL.RawQuery
 					if calls > 1 {
 						_, _ = w.Write([]byte(`[]`))
 						return
@@ -184,6 +186,7 @@ func TestCheckScansAllMatchingRefsOnce(t *testing.T) {
 				require.Contains(t, results[0].Problem, "has no revision "+hash)
 			}
 			require.Equal(t, 1, calls)
+			require.Empty(t, query)
 		})
 	}
 }
