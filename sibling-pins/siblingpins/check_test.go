@@ -1,6 +1,7 @@
 package siblingpins
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -99,6 +100,8 @@ func TestCheckFailsWhenGitHubRefuses(t *testing.T) {
 // tag that points at it, and a hash no tag points at still fails.
 func TestCheckResolvesTagObjectHashes(t *testing.T) {
 	status := "behind"
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
 	var refs strings.Builder
 	refs.WriteByte('[')
 	for i := range 100 {
@@ -112,10 +115,10 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 		case "/repos/kenn-io/kata/git/matching-refs/tags":
 			queries = append(queries, r.URL.RawQuery)
 			if r.URL.Query().Get("page") == "2" {
-				_, _ = w.Write([]byte(`[]`))
-			} else {
-				_, _ = w.Write([]byte(refs.String()))
+				// Bound a paging regression while returning the same refs.
+				defer cancel()
 			}
+			_, _ = w.Write([]byte(refs.String()))
 		case "/repos/kenn-io/kata/compare/main...v0.14.3":
 			_, _ = w.Write([]byte(`{"status":"` + status + `","ahead_by":1}`))
 		default:
@@ -129,7 +132,7 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 		{File: "bun.lock", Repo: "kata", Ref: "0123456", Source: "bun.lock: unknown hash"},
 	}
 	github := GitHub{Client: server.Client(), BaseURL: server.URL}
-	results, err := github.CheckResults(t.Context(), pins)
+	results, err := github.CheckResults(ctx, pins)
 	require.NoError(t, err)
 	require.Equal(t, []Finding{
 		{File: "bun.lock", Repo: "kata", Ref: "c668572", Source: "bun.lock: tag object", Revision: "v0.14.3"},
@@ -140,13 +143,12 @@ func TestCheckResolvesTagObjectHashes(t *testing.T) {
 		{File: "bun.lock", Repo: "kata", Ref: "c668572", Source: "bun.lock: tag object"},
 		{File: "web/bun.lock", Repo: "kata", Ref: "c668572", Source: "web/bun.lock: tag object"},
 	}
-	results, err = github.CheckResults(t.Context(), pins)
+	results, err = github.CheckResults(ctx, pins)
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 	for _, result := range results {
 		require.Equal(t, "v0.14.3", result.Revision, "callers must look up the revision GitHub compared")
 		require.Contains(t, result.Problem, "v0.14.3")
 	}
-	require.Len(t, queries, 3)
 	require.Equal(t, []string{"", "", ""}, queries)
 }
