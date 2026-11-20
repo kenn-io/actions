@@ -155,3 +155,25 @@ esac
 	require.Error(t, err)
 	require.Contains(t, string(output), `-x.md:1: stub nope: v1.0.0`)
 }
+
+func TestReleaseCommandsOptionalValueBoolFlags(t *testing.T) {
+	dir := t.TempDir()
+	helpDir, err := filepath.Abs("testdata/help")
+	require.NoError(t, err)
+	// The checker runs help with PATH=/usr/bin:/bin, which lacks cat on some hosts.
+	cat, err := exec.LookPath("cat")
+	require.NoError(t, err)
+	// Serve msgvault v0.26.0 help, which prints bool flags as --name[=true|false].
+	script := fmt.Sprintf("#!/bin/sh\ncase \"$*\" in\nhelp) exec %[1]q %[2]q ;;\n'help init-db') exec %[1]q %[3]q ;;\n*) exit 2 ;;\nesac\n",
+		cat, filepath.Join(helpDir, "msgvault-v0.26.0-root.txt"), filepath.Join(helpDir, "msgvault-v0.26.0-init-db.txt"))
+	archive := filepath.Join(dir, "msgvault.tar.gz")
+	require.NoError(t, writeFixtureArchive(archive, map[string][]byte{"msgvault": []byte(script)}))
+	readme := filepath.Join(dir, "README.md")
+	commands := "```sh\nmsgvault init-db\nmsgvault --agent-allow-insecure init-db\nmsgvault init-db --local=false -v\nmsgvault init-db -h\nmsgvault init-db --bogus\n```\n"
+	require.NoError(t, os.WriteFile(readme, []byte(commands), 0o600))
+	var out, errOut bytes.Buffer
+	code := run(t.Context(), []string{"--archive", archive, "--release", "v0.26.0", "--binary", "msgvault", readme}, &out, &errOut)
+	require.Equal(t, 1, code)
+	require.Equal(t, readme+":6: msgvault init-db --bogus: v0.26.0 unknown flag: --bogus\n", errOut.String())
+	require.Empty(t, out.String())
+}

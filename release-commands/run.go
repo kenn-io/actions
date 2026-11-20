@@ -15,7 +15,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w-]+)(?:[ =](\S+))?(?: {2,}.*)?$`)
+// Some Cobra CLIs print bool flags as --name[=true|false].
+var flagLine = regexp.MustCompile(`^(?:-([\w])(?:,\s*|/))?(--[\w-]+)(?:[ =](\S+)|\[=[^\]\s]*\])?(?: {2,}.*)?$`)
 
 type usage struct {
 	output    string
