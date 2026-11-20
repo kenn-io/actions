@@ -141,20 +141,34 @@ func TestHelpCache(t *testing.T) {
 }
 
 func TestReleasedHelpRootFlags(t *testing.T) {
-	dir := t.TempDir()
+	binary := releasedHelpBinary(t, map[string]string{
+		"": "msgvault-root", "daemon": "msgvault-daemon", "daemon stop": "msgvault-daemon-stop",
+	})
+	require.NoError(t, (helpCache{}).check(t.Context(), binary, []string{"daemon", "--home", "example-home", "stop"}))
+}
+
+// pflag 1.1 prints boolean flags as --name[=true|false] and Cobra lists root
+// flags on subcommand pages as compact Global Flags names.
+func TestReleasedHelpOptionalValueBooleans(t *testing.T) {
+	binary := releasedHelpBinary(t, map[string]string{
+		"": "msgvault-v0.26.0-root", "init-db": "msgvault-v0.26.0-init-db",
+	})
+	for _, args := range [][]string{{"init-db"}, {"--local", "init-db"}, {"--agent-allow-insecure=false", "init-db"}, {"init-db", "-v"}} {
+		require.NoError(t, (helpCache{}).check(t.Context(), binary, args), args)
+	}
+}
+
+func releasedHelpBinary(t *testing.T, pages map[string]string) string {
+	t.Helper()
 	helpDir, err := filepath.Abs("testdata/help")
 	require.NoError(t, err)
 	var wrapper strings.Builder
 	wrapper.WriteString("#!/bin/sh\ncase \"$*\" in\n")
-	for _, path := range []string{"", "daemon", "daemon stop"} {
-		file := "msgvault-" + strings.ReplaceAll(path, " ", "-")
-		if path == "" {
-			file = "msgvault-root"
-		}
+	for path, file := range pages {
 		fmt.Fprintf(&wrapper, "%q) cat %q ;;\n", strings.TrimSpace("help "+path), filepath.Join(helpDir, file+".txt"))
 	}
 	wrapper.WriteString("*) exit 2 ;;\nesac\n")
-	binary := filepath.Join(dir, "msgvault")
+	binary := filepath.Join(t.TempDir(), "msgvault")
 	require.NoError(t, os.WriteFile(binary, []byte(wrapper.String()), 0o700))
-	require.NoError(t, (helpCache{}).check(t.Context(), binary, []string{"daemon", "--home", "example-home", "stop"}))
+	return binary
 }
