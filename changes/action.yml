@@ -4,6 +4,12 @@ inputs:
   filters:
     description: YAML path groups in paths-filter syntax. Reserve the changes name.
     required: true
+  base:
+    description: Branch or SHA to compare against on manual runs.
+    required: false
+  ref:
+    description: Revision to compare on manual runs. Defaults to the dispatched ref.
+    required: false
 outputs:
   groups:
     description: JSON array of matching group names.
@@ -15,8 +21,10 @@ runs:
   using: composite
   steps:
     - uses: step-security/paths-filter@v4.0.3
-      if: github.event_name == 'pull_request' && github.event.pull_request.changed_files < 3000
+      if: (github.event_name == 'pull_request' && github.event.pull_request.changed_files < 3000) || (github.event_name == 'workflow_dispatch' && inputs.base != '')
       id: filter
       continue-on-error: true
       with:
         filters: ${{ inputs.filters }}
+        base: ${{ github.event_name == 'workflow_dispatch' && inputs.base || '' }}
+        ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || '' }}

@@ -4,12 +4,13 @@ on:
   push:
     branches: [main]
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -23,6 +24,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: ${{ github.event_name != 'workflow_dispatch' && 1 || 0 }}
       - uses: $/changes
         id: changes
         with:
@@ -41,6 +43,38 @@ jobs:
         id: malformed
         with:
           filters: 'broken: ['
+      - name: Get manual comparison revisions
+        if: github.event_name == 'workflow_dispatch'
+        id: revisions
+        run: |
+          test "$(git rev-parse --is-shallow-repository)" = false
+          echo "root=$(git rev-list --max-parents=0 HEAD | tail -n 1)" >> "$GITHUB_OUTPUT"
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: root_diff
+        with:
+          base: ${{ steps.revisions.outputs.root }}
+          filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: same
+        with:
+          base: ${{ steps.revisions.outputs.head }}
+          filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: reverse
+        with:
+          base: ${{ steps.revisions.outputs.head }}
+          ref: ${{ steps.revisions.outputs.root }}
+          filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: missing_base
+        with:
+          base: ffffffffffffffffffffffffffffffffffffffff
+          filters: "some-probe: ['**']"
       - name: Check changes outputs
         env:
           EVENT: ${{ github.event_name }}
@@ -53,6 +87,14 @@ jobs:
           RESERVED_UNMATCHED_ALL: ${{ steps.reserved_unmatched.outputs.all }}
           MALFORMED_GROUPS: ${{ steps.malformed.outputs.groups }}
           MALFORMED_ALL: ${{ steps.malformed.outputs.all }}
+          ROOT_DIFF_GROUPS: ${{ steps.root_diff.outputs.groups }}
+          ROOT_DIFF_ALL: ${{ steps.root_diff.outputs.all }}
+          SAME_GROUPS: ${{ steps.same.outputs.groups }}
+          SAME_ALL: ${{ steps.same.outputs.all }}
+          REVERSE_GROUPS: ${{ steps.reverse.outputs.groups }}
+          REVERSE_ALL: ${{ steps.reverse.outputs.all }}
+          MISSING_BASE_GROUPS: ${{ steps.missing_base.outputs.groups }}
+          MISSING_BASE_ALL: ${{ steps.missing_base.outputs.all }}
         run: |
           # The main-push run covers the skipped-detector path.
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
@@ -69,6 +111,16 @@ jobs:
           else
             test "$GROUPS_JSON" = '[]'
             test "$ALL" = true
+          fi
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            test "$ROOT_DIFF_GROUPS" = '["some-probe"]'
+            test "$ROOT_DIFF_ALL" = false
+            test "$SAME_GROUPS" = '[]'
+            test "$SAME_ALL" = false
+            test "$REVERSE_GROUPS" = '["some-probe"]'
+            test "$REVERSE_ALL" = false
+            test "$MISSING_BASE_GROUPS" = '[]'
+            test "$MISSING_BASE_ALL" = true
           fi
 
   sibling-pins:

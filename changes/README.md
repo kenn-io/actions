@@ -8,8 +8,8 @@ An unknown path matches every lane whose skip set leaves it out.
 Without `:` or a newline, paths-filter reads a bare string as a filter-file path.
 Reserve `changes`, which paths-filter uses for its output. A name collision returns
 `groups=[]` and `all=true`. `groups` is a JSON array of
-matching names. `all` is `true` for events other than `pull_request` and for
-pull requests with at least 3,000 changed files.
+matching names. Filtering runs for pull requests under 3,000 changed files and
+manual runs with a `base`. Other events and manual runs without a `base` set `all=true`.
 
 Reference it at `@main`; the lockfile pins the commit. Grant `pull-requests: read`,
 and `contents: read` when the job also checks out code.
@@ -43,6 +43,31 @@ separate negated patterns also match paths skipped by another pattern.
 For one path, use `!docs/**`; a one-entry brace such as `!{docs/**}` does not expand.
 Detector failure, including missing `pull-requests: read` permission or invalid
 filters, sets `all=true` and runs every lane.
+
+## Manual runs
+
+Check out the repository with full history and grant `contents: read`. Pass a
+different branch as `base` to compare changes since its merge base with the
+dispatched ref. A SHA base compares directly. A base equal to the dispatched
+branch compares its last commit; `base: HEAD` compares uncommitted changes.
+For a baseline run, set `ref` to the candidate commit SHA so both runs compare
+the same changes. Names resolve to an `origin` branch, then a local branch, then
+a tag. An unavailable base or ref sets `all=true`.
+
+```yaml
+permissions:
+  contents: read
+steps:
+  - uses: actions/checkout@v7
+    with:
+      fetch-depth: 0
+  - uses: kenn-io/actions/changes@main
+    id: changes
+    with:
+      base: main
+      filters: |
+        go: ['go/**']
+```
 
 GitHub lists at most 3,000 changed files. At that count or above, this action
 skips filtering and sets `all=true` so a partial file list cannot skip a lane.
