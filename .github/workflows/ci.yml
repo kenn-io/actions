@@ -88,6 +88,12 @@ jobs:
           filters: "some-probe: ['**']"
       - uses: $/changes
         if: github.event_name == 'workflow_dispatch'
+        id: zero_base
+        with:
+          base: '0000000000000000000000000000000000000000'
+          filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
         id: short_base
         with:
           base: ${{ steps.revisions.outputs.short }}
@@ -119,6 +125,7 @@ jobs:
           REVERSE_ALL: ${{ steps.reverse.outputs.all }}
           MISSING_BASE_GROUPS: ${{ steps.missing_base.outputs.groups }}
           MISSING_BASE_ALL: ${{ steps.missing_base.outputs.all }}
+          ZERO_BASE: ${{ steps.zero_base.outputs.groups }}/${{ steps.zero_base.outputs.all }}
           SHORT_BASE: ${{ steps.short_base.outputs.groups }}/${{ steps.short_base.outputs.all }}
           BRANCH_REF: ${{ steps.branch_ref.outputs.groups }}/${{ steps.branch_ref.outputs.all }}
         run: |
@@ -147,6 +154,7 @@ jobs:
             test "$REVERSE_ALL" = false
             test "$MISSING_BASE_GROUPS" = '[]'
             test "$MISSING_BASE_ALL" = true
+            test "$ZERO_BASE" = '[]/true'
             test "$SHORT_BASE" = '[]/true'
             test "$BRANCH_REF" = '[]/true'
           fi

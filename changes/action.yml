@@ -28,7 +28,7 @@ runs:
         BASE: ${{ inputs.base }}
         REF: ${{ inputs.ref || github.sha }}
       run: |
-        if [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$REF" =~ ^[0-9a-f]{40}$ ]]; then
+        if [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$REF" =~ ^[0-9a-f]{40}$ && "$BASE" != 0000000000000000000000000000000000000000 && "$REF" != 0000000000000000000000000000000000000000 ]]; then
           echo "valid=true" >> "$GITHUB_OUTPUT"
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
         fi
