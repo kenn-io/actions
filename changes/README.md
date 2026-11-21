@@ -67,7 +67,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: base
-        run: echo "sha=$(git merge-base origin/main \"$GITHUB_SHA\")" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(git merge-base origin/main "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
       - uses: kenn-io/actions/changes@main
         id: changes
         with:
