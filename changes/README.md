@@ -8,8 +8,9 @@ An unknown path matches every lane whose skip set leaves it out.
 Without `:` or a newline, paths-filter reads a bare string as a filter-file path.
 Reserve `changes`, which paths-filter uses for its output. A name collision returns
 `groups=[]` and `all=true`. `groups` is a JSON array of
-matching names. `all` is `true` for events other than `pull_request` and for
-pull requests with at least 3,000 changed files.
+matching names. Filtering runs for pull requests under 3,000 changed files and
+manual runs with valid comparison commits. Other events and manual runs without
+a valid `base` set `all=true`.
 
 Reference it at `@main`; the lockfile pins the commit. Grant `pull-requests: read`,
 and `contents: read` when the job also checks out code.
@@ -43,6 +44,38 @@ separate negated patterns also match paths skipped by another pattern.
 For one path, use `!docs/**`; a one-entry brace such as `!{docs/**}` does not expand.
 Detector failure, including missing `pull-requests: read` permission or invalid
 filters, sets `all=true` and runs every lane.
+
+## Manual runs
+
+Check out the repository with full history and grant `contents: read`. Set
+`base` to a full 40-character lowercase commit SHA. The optional `ref` also
+accepts a full lowercase commit SHA and defaults to the dispatched commit.
+The action compares the two commits directly, including changes on either side.
+To compare changes since a branch diverged, use its merge-base commit as `base`.
+For a baseline run, pass that same `base` and set `ref` to the candidate commit
+SHA so both runs compare the same changes. Ensure both commits are included in
+the fetched refs; full history covers branches and tags fetched by the checkout.
+Invalid or unavailable commits set `all=true`.
+
+```yaml
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: base
+        run: echo "sha=$(git merge-base origin/main "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
+      - uses: kenn-io/actions/changes@main
+        id: changes
+        with:
+          base: ${{ steps.base.outputs.sha }}
+          filters: |
+            go: ['go/**']
+```
 
 GitHub lists at most 3,000 changed files. At that count or above, this action
 skips filtering and sets `all=true` so a partial file list cannot skip a lane.
