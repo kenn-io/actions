@@ -53,8 +53,9 @@ accepts a full lowercase commit SHA and defaults to the dispatched commit.
 The action compares the two commits directly, including changes on either side.
 To compare changes since a branch diverged, use its merge-base commit as `base`.
 For a baseline run, pass that same `base` and set `ref` to the candidate commit
-SHA so both runs compare the same changes. Invalid or unavailable commits set
-`all=true`.
+SHA so both runs compare the same changes. Ensure both commits are included in
+the fetched refs; full history covers branches and tags fetched by the checkout.
+Invalid or unavailable commits set `all=true`.
 
 ```yaml
 jobs:

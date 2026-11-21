@@ -79,7 +79,9 @@ jobs:
         with:
           base: ${{ steps.revisions.outputs.head }}
           ref: ${{ steps.revisions.outputs.root }}
-          filters: "some-probe: ['**']"
+          filters: |
+            action: ['changes/**']
+            other: ['__ci_changes_unmatched_probe__/**']
       - uses: $/changes
         if: github.event_name == 'workflow_dispatch'
         id: missing_base
@@ -150,7 +152,7 @@ jobs:
             test "$ROOT_DIFF_ALL" = false
             test "$SAME_GROUPS" = '[]'
             test "$SAME_ALL" = false
-            test "$REVERSE_GROUPS" = '["some-probe"]'
+            test "$REVERSE_GROUPS" = '["action"]'
             test "$REVERSE_ALL" = false
             test "$MISSING_BASE_GROUPS" = '[]'
             test "$MISSING_BASE_ALL" = true
