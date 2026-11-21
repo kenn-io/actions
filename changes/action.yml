@@ -5,10 +5,10 @@ inputs:
     description: YAML path groups in paths-filter syntax. Reserve the changes name.
     required: true
   base:
-    description: Branch or SHA to compare against on manual runs.
+    description: Full lowercase commit SHA to compare against on manual runs.
     required: false
   ref:
-    description: Revision to compare on manual runs. Defaults to the dispatched ref.
+    description: Full lowercase commit SHA to compare on manual runs. Defaults to the dispatched commit.
     required: false
 outputs:
   groups:
@@ -20,11 +20,23 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Validate manual comparison
+      if: github.event_name == 'workflow_dispatch'
+      id: comparison
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        REF: ${{ inputs.ref || github.sha }}
+      run: |
+        if [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$REF" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+        fi
     - uses: step-security/paths-filter@v4.0.3
-      if: (github.event_name == 'pull_request' && github.event.pull_request.changed_files < 3000) || (github.event_name == 'workflow_dispatch' && inputs.base != '')
+      if: (github.event_name == 'pull_request' && github.event.pull_request.changed_files < 3000) || (github.event_name == 'workflow_dispatch' && steps.comparison.outputs.valid == 'true')
       id: filter
       continue-on-error: true
       with:
         filters: ${{ inputs.filters }}
         base: ${{ github.event_name == 'workflow_dispatch' && inputs.base || '' }}
-        ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || '' }}
+        ref: ${{ github.event_name == 'workflow_dispatch' && steps.comparison.outputs.ref || '' }}

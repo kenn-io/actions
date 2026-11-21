@@ -9,7 +9,8 @@ Without `:` or a newline, paths-filter reads a bare string as a filter-file path
 Reserve `changes`, which paths-filter uses for its output. A name collision returns
 `groups=[]` and `all=true`. `groups` is a JSON array of
 matching names. Filtering runs for pull requests under 3,000 changed files and
-manual runs with a `base`. Other events and manual runs without a `base` set `all=true`.
+manual runs with valid comparison commits. Other events and manual runs without
+a valid `base` set `all=true`.
 
 Reference it at `@main`; the lockfile pins the commit. Grant `pull-requests: read`,
 and `contents: read` when the job also checks out code.
@@ -46,27 +47,33 @@ filters, sets `all=true` and runs every lane.
 
 ## Manual runs
 
-Check out the repository with full history and grant `contents: read`. Pass a
-different branch as `base` to compare changes since its merge base with the
-dispatched ref. A SHA base compares directly. A base equal to the dispatched
-branch compares its last commit; `base: HEAD` compares uncommitted changes.
-For a baseline run, set `ref` to the candidate commit SHA so both runs compare
-the same changes. Names resolve to an `origin` branch, then a local branch, then
-a tag. An unavailable base or ref sets `all=true`.
+Check out the repository with full history and grant `contents: read`. Set
+`base` to a full 40-character lowercase commit SHA. The optional `ref` also
+accepts a full lowercase commit SHA and defaults to the dispatched commit.
+The action compares the two commits directly, including changes on either side.
+To compare changes since a branch diverged, use its merge-base commit as `base`.
+For a baseline run, pass that same `base` and set `ref` to the candidate commit
+SHA so both runs compare the same changes. Invalid or unavailable commits set
+`all=true`.
 
 ```yaml
-permissions:
-  contents: read
-steps:
-  - uses: actions/checkout@v7
-    with:
-      fetch-depth: 0
-  - uses: kenn-io/actions/changes@main
-    id: changes
-    with:
-      base: main
-      filters: |
-        go: ['go/**']
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: base
+        run: echo "sha=$(git merge-base origin/main \"$GITHUB_SHA\")" >> "$GITHUB_OUTPUT"
+      - uses: kenn-io/actions/changes@main
+        id: changes
+        with:
+          base: ${{ steps.base.outputs.sha }}
+          filters: |
+            go: ['go/**']
 ```
 
 GitHub lists at most 3,000 changed files. At that count or above, this action

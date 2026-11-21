@@ -75,6 +75,46 @@ jobs:
         with:
           base: ffffffffffffffffffffffffffffffffffffffff
           filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: branch_base
+        with:
+          base: main
+          filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: head_base
+        with:
+          base: HEAD
+          ref: ${{ steps.revisions.outputs.root }}
+          filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: equal_names
+        with:
+          base: nonexistent-branch
+          ref: nonexistent-branch
+          filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: short_base
+        with:
+          base: abc1234
+          filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: branch_ref
+        with:
+          base: ${{ steps.revisions.outputs.root }}
+          ref: main
+          filters: "some-probe: ['**']"
+      - uses: $/changes
+        if: github.event_name == 'workflow_dispatch'
+        id: tag_base
+        with:
+          base: refs/tags/main
+          ref: ${{ steps.revisions.outputs.head }}
+          filters: "some-probe: ['**']"
       - name: Check changes outputs
         env:
           EVENT: ${{ github.event_name }}
@@ -95,6 +135,12 @@ jobs:
           REVERSE_ALL: ${{ steps.reverse.outputs.all }}
           MISSING_BASE_GROUPS: ${{ steps.missing_base.outputs.groups }}
           MISSING_BASE_ALL: ${{ steps.missing_base.outputs.all }}
+          BRANCH_BASE: ${{ steps.branch_base.outputs.groups }}/${{ steps.branch_base.outputs.all }}
+          HEAD_BASE: ${{ steps.head_base.outputs.groups }}/${{ steps.head_base.outputs.all }}
+          EQUAL_NAMES: ${{ steps.equal_names.outputs.groups }}/${{ steps.equal_names.outputs.all }}
+          SHORT_BASE: ${{ steps.short_base.outputs.groups }}/${{ steps.short_base.outputs.all }}
+          BRANCH_REF: ${{ steps.branch_ref.outputs.groups }}/${{ steps.branch_ref.outputs.all }}
+          TAG_BASE: ${{ steps.tag_base.outputs.groups }}/${{ steps.tag_base.outputs.all }}
         run: |
           # The main-push run covers the skipped-detector path.
           if [[ "$EVENT" == pull_request && "$CHANGED_FILES" -lt 3000 ]]; then
@@ -121,6 +167,12 @@ jobs:
             test "$REVERSE_ALL" = false
             test "$MISSING_BASE_GROUPS" = '[]'
             test "$MISSING_BASE_ALL" = true
+            test "$BRANCH_BASE" = '[]/true'
+            test "$HEAD_BASE" = '[]/true'
+            test "$EQUAL_NAMES" = '[]/true'
+            test "$SHORT_BASE" = '[]/true'
+            test "$BRANCH_REF" = '[]/true'
+            test "$TAG_BASE" = '[]/true'
           fi
 
   sibling-pins:
