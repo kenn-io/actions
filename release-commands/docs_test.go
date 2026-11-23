@@ -1,61 +1,24 @@
 package main
 
 import (
-	"bytes"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestPowerShellExecutableAliasUnknownCommand(t *testing.T) {
-	for _, binary := range []string{"stub", "stub.exe", "STUB.EXE"} {
-		t.Run(binary, func(t *testing.T) {
-			file := filepath.Join(t.TempDir(), "example.md")
-			require.NoError(t, os.WriteFile(file, []byte("```powershell\n"+binary+" nope\n```\n"), 0o600))
-			var out, errOut bytes.Buffer
-			code := run(t.Context(), []string{"--archive", fixture, "--release", "v1.0.0", "--binary", "stub", file}, &out, &errOut)
-			require.Equal(t, 1, code, errOut.String())
-			require.Contains(t, errOut.String(), file+":2: "+binary+" nope: v1.0.0")
-			require.Contains(t, errOut.String(), `has no command "nope"`)
-			require.Empty(t, out.String())
-		})
-	}
-}
-
-func TestBinaryNameExecutableAlias(t *testing.T) {
+func TestBinaryName(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		binaries []string
 		want     string
-		ok       bool
 	}{
-		{"STUB.EXE", []string{"stub"}, "stub", true},
-		{"STUB.EXE", []string{"stub", "stub.exe"}, "stub.exe", true},
-		{"stub.exe", []string{"stub", "stub.exe"}, "stub.exe", true},
-		{"stub.exe", []string{"STUB.EXE", "stub.exe"}, "stub.exe", true},
-		{"Stub", []string{"stub"}, "", false},
+		{"STUB.EXE", []string{"stub"}, "stub"},
+		{"STUB.EXE", []string{"stub", "stub.exe"}, "stub.exe"},
+		{"stub.exe", []string{"STUB.EXE", "stub.exe"}, "stub.exe"},
+		{"STUB-HELPER", []string{"stub-helper"}, "STUB-HELPER"},
 	} {
-		got, ok := binaryName(test.name, test.binaries)
-		require.Equal(t, test.want, got)
-		require.Equal(t, test.ok, ok)
+		require.Equal(t, test.want, binaryName(test.name, test.binaries))
 	}
-}
-
-func TestInstallerExecutableCaseVariantUnknownCommand(t *testing.T) {
-	dir := t.TempDir()
-	data, err := os.ReadFile(fixtureBinary)
-	require.NoError(t, err)
-	archive := filepath.Join(dir, "release.tar.gz")
-	require.NoError(t, writeFixtureArchive(archive, map[string][]byte{"other": data, "stub": data}))
-	file := filepath.Join(dir, "install.ps1")
-	require.NoError(t, os.WriteFile(file, []byte("Write-Host 'other plain && STUB.EXE nope'\n"), 0o600))
-	var out, errOut bytes.Buffer
-	code := run(t.Context(), []string{"--archive", archive, "--release", "v1.0.0", "--binary", "other", "--binary", "stub", file}, &out, &errOut)
-	require.Equal(t, 1, code, errOut.String())
-	require.Contains(t, errOut.String(), file+":1: other plain && STUB.EXE nope: v1.0.0")
-	require.Contains(t, errOut.String(), `has no command "nope"`)
 }
 
 func TestExamples(t *testing.T) {

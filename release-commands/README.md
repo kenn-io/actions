@@ -80,7 +80,7 @@ Use a command the release supports, publish a release containing it, or add the 
 
 Raw HTML `<pre>` blocks aren't read. Use Markdown fenced blocks for command examples.
 
-Executable names match `binaries`. A bare name ending in `.exe` also matches case-insensitively, with or without the suffix in `binaries`. Other names match exactly, and an exact configured name takes precedence.
+Executable names match `binaries`. A bare name ending in `.exe` also matches case-insensitively, with or without the suffix in `binaries`. Other names match exactly, and an exact configured name takes precedence. A path such as `.\stub.exe` or a PowerShell call such as `& stub.exe` isn't recognized as an executable name.
 
 The action checks Linux amd64 binaries only. It asks each binary for `help <command path>`, then checks command and visible flag names against the final command's help page, including inherited flags. Hidden flags count as absent. Commands that forward flags to another program need a separate check when those flags aren't listed in help. Values only determine which words belong to flags; the checker doesn't validate types, argument counts, data, permissions, or deprecation notices. Successful, parsed help is reused across files within one run for each binary and exact help path. Failed or unparseable help is retried. Each actual help invocation has a fresh temporary home, `PATH=/usr/bin:/bin` as its only other environment variable, and a ten-second limit. The release binary must be trusted.
 

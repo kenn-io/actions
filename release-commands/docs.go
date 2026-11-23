@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/yuin/goldmark/v2/ast"
@@ -152,24 +153,19 @@ func visible(node ast.Node, source []byte) string {
 	return words.String()
 }
 
-func binaryName(name string, binaries []string) (string, bool) {
-	exe := len(name) > 4 && strings.EqualFold(name[len(name)-4:], ".exe")
-	var full, alias string
-	for _, binary := range binaries {
-		if name == binary {
-			return binary, true
-		}
-		if exe && full == "" && strings.EqualFold(name, binary) {
-			full = binary
-		}
-		if exe && alias == "" && strings.EqualFold(name[:len(name)-4], binary) {
-			alias = binary
+// binaryName returns the configured binary a bare Windows name runs, or name when none does.
+func binaryName(name string, binaries []string) string {
+	if len(name) <= 4 || !strings.EqualFold(name[len(name)-4:], ".exe") || slices.Contains(binaries, name) {
+		return name
+	}
+	for _, candidate := range []string{name, name[:len(name)-4]} {
+		for _, binary := range binaries {
+			if strings.EqualFold(candidate, binary) {
+				return binary
+			}
 		}
 	}
-	if full != "" {
-		return full, true
-	}
-	return alias, alias != ""
+	return name
 }
 
 func examples(file string, source []byte, binaries []string) ([]exampleBlock, error) {
@@ -183,22 +179,12 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
-		if err == nil && len(invocations) > 0 {
-			var matched [][]string
-			for i, args := range invocations {
-				name, ok := binaryName(args[0], binaries)
-				if i == 0 && !markdown && !ok {
-					return false
-				}
-				if ok {
-					args[0] = name
-					matched = append(matched, args)
-				}
-			}
-			if len(matched) > 0 {
-				current.commands = append(current.commands, example{text: value, line: line, invocations: matched})
-				return true
-			}
+		for _, args := range invocations {
+			args[0] = binaryName(args[0], binaries)
+		}
+		if err == nil && len(invocations) > 0 && (markdown || slices.Contains(binaries, invocations[0][0])) && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
+			current.commands = append(current.commands, example{text: value, line: line, invocations: invocations})
+			return true
 		}
 		return false
 	}
