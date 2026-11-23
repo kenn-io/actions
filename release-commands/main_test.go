@@ -78,6 +78,7 @@ func TestReleaseCommands(t *testing.T) {
 		{"passing marked command", ".md", "<!-- release-commands: expected-failure -->\n\n```sh\nstub run file\n```", "", "passes; remove expected-failure marker: stub run file", 4, []string{"stub"}},
 		{"trailing comment", ".md", "`stub nope # private remark`", `stub nope: v1.0.0`, "", 1, []string{"stub"}},
 		{"missing binary", ".md", "`stub-helper run`", "stub-helper: not in", "", 1, []string{"stub", "stub-helper"}},
+		{"missing executable alias", ".md", "`STUB-HELPER.EXE run`", "STUB-HELPER.EXE: not in", "", 1, []string{"stub", "stub-helper"}},
 		{"marked missing binary", ".md", "Not in the latest release yet\n\n`stub-helper run`", "", "", 0, []string{"stub", "stub-helper"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

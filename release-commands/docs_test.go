@@ -31,9 +31,9 @@ func TestExamplesExecutableAlias(t *testing.T) {
 		binaries     []string
 		want         []string
 	}{
-		{"installer", "Write-Host 'stub.exe nope'", []string{"stub"}, []string{"stub", "nope"}},
+		{"installer", "Write-Host 'stub.exe nope'", []string{"stub"}, []string{"stub.exe", "nope"}},
 		{"exact configured name", "Write-Host 'stub.exe nope'", []string{"stub", "stub.exe"}, []string{"stub.exe", "nope"}},
-		{"case variant of configured exe", "Write-Host 'STUB.EXE nope'", []string{"stub", "stub.exe"}, []string{"stub.exe", "nope"}},
+		{"case variant of configured exe", "Write-Host 'STUB.EXE nope'", []string{"stub", "stub.exe"}, []string{"STUB.EXE", "nope"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			blocks, err := examples("example.ps1", []byte(test.source), test.binaries)
@@ -45,6 +45,12 @@ func TestExamplesExecutableAlias(t *testing.T) {
 			require.Equal(t, [][]string{test.want}, blocks[0].commands[0].invocations)
 		})
 	}
+}
+
+func TestBinaryNameExecutableAlias(t *testing.T) {
+	require.Equal(t, "stub", binaryName("STUB.EXE", []string{"stub"}))
+	require.Equal(t, "stub.exe", binaryName("STUB.EXE", []string{"stub", "stub.exe"}))
+	require.Equal(t, "stub.exe", binaryName("stub.exe", []string{"stub", "stub.exe"}))
 }
 
 func TestInstallerExecutableCaseVariantUnknownCommand(t *testing.T) {

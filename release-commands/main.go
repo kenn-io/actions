@@ -59,11 +59,12 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			for index, example := range block.commands {
 				problem := ""
 				for _, args := range example.invocations {
-					if !slices.Contains(*binaries, args[0]) {
+					name := binaryName(args[0], *binaries)
+					if !slices.Contains(*binaries, name) {
 						continue
 					}
 					firstChecked = min(firstChecked, index)
-					binary := paths[args[0]]
+					binary := paths[name]
 					if binary == "" {
 						problem = fmt.Sprintf("%s: not in %s", args[0], filepath.Base(*archive))
 						break

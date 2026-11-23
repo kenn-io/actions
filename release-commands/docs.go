@@ -153,6 +153,22 @@ func visible(node ast.Node, source []byte) string {
 	return words.String()
 }
 
+func binaryName(name string, binaries []string) string {
+	if len(name) > 4 && strings.EqualFold(name[len(name)-4:], ".exe") && !slices.Contains(binaries, name) {
+		for _, binary := range binaries {
+			if strings.EqualFold(name, binary) {
+				return binary
+			}
+		}
+		for _, binary := range binaries {
+			if strings.EqualFold(name[:len(name)-4], binary) {
+				return binary
+			}
+		}
+	}
+	return name
+}
+
 func examples(file string, source []byte, binaries []string) ([]exampleBlock, error) {
 	markdown := strings.EqualFold(filepath.Ext(file), ".md")
 	var result []exampleBlock
@@ -167,27 +183,7 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		if err != nil {
 			return false
 		}
-		for _, args := range invocations {
-			name := args[0]
-			if len(name) > 4 && strings.EqualFold(name[len(name)-4:], ".exe") && !slices.Contains(binaries, name) {
-				for _, binary := range binaries {
-					if strings.EqualFold(name, binary) {
-						args[0] = binary
-						break
-					}
-				}
-				if args[0] != name {
-					continue
-				}
-				for _, binary := range binaries {
-					if strings.EqualFold(name[:len(name)-4], binary) {
-						args[0] = binary
-						break
-					}
-				}
-			}
-		}
-		if len(invocations) > 0 && (markdown || slices.Contains(binaries, invocations[0][0])) && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
+		if len(invocations) > 0 && (markdown || slices.Contains(binaries, binaryName(invocations[0][0], binaries))) && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, binaryName(args[0], binaries)) }) {
 			current.commands = append(current.commands, example{text: value, line: line, invocations: invocations})
 			return true
 		}
