@@ -164,6 +164,11 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
+		for _, args := range invocations {
+			if base, ok := strings.CutSuffix(args[0], ".exe"); ok && !slices.Contains(binaries, args[0]) && slices.Contains(binaries, base) {
+				args[0] = base
+			}
+		}
 		if err == nil && len(invocations) > 0 && (markdown || slices.Contains(binaries, invocations[0][0])) && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
 			current.commands = append(current.commands, example{text: value, line: line, invocations: invocations})
 			return true

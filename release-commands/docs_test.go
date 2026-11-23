@@ -24,6 +24,27 @@ func TestPowerShellExecutableAliasUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestExamplesExecutableAlias(t *testing.T) {
+	for _, test := range []struct {
+		name, source string
+		binaries     []string
+		want         []string
+	}{
+		{"installer", "Write-Host 'stub.exe nope'", []string{"stub"}, []string{"stub", "nope"}},
+		{"exact configured name", "Write-Host 'stub.exe nope'", []string{"stub", "stub.exe"}, []string{"stub.exe", "nope"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			blocks, err := examples("example.ps1", []byte(test.source), test.binaries)
+			require.NoError(t, err)
+			require.Len(t, blocks, 1)
+			require.Len(t, blocks[0].commands, 1)
+			require.Equal(t, "stub.exe nope", blocks[0].commands[0].text)
+			require.Equal(t, 1, blocks[0].commands[0].line)
+			require.Equal(t, [][]string{test.want}, blocks[0].commands[0].invocations)
+		})
+	}
+}
+
 func TestExamples(t *testing.T) {
 	type expectedExample struct {
 		text string
