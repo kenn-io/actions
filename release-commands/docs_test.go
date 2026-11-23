@@ -1,10 +1,28 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestPowerShellExecutableAliasUnknownCommand(t *testing.T) {
+	for _, binary := range []string{"stub", "stub.exe"} {
+		t.Run(binary, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "example.md")
+			require.NoError(t, os.WriteFile(file, []byte("```powershell\n"+binary+" nope\n```\n"), 0o600))
+			var out, errOut bytes.Buffer
+			code := run(t.Context(), []string{"--archive", fixture, "--release", "v1.0.0", "--binary", "stub", file}, &out, &errOut)
+			require.Equal(t, 1, code, errOut.String())
+			require.Contains(t, errOut.String(), file+":2: "+binary+" nope: v1.0.0")
+			require.Contains(t, errOut.String(), `has no command "nope"`)
+			require.Empty(t, out.String())
+		})
+	}
+}
 
 func TestExamples(t *testing.T) {
 	type expectedExample struct {
