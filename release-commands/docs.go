@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/yuin/goldmark/v2/ast"
@@ -154,22 +153,23 @@ func visible(node ast.Node, source []byte) string {
 }
 
 func binaryName(name string, binaries []string) (string, bool) {
-	if slices.Contains(binaries, name) {
-		return name, true
-	}
-	if len(name) > 4 && strings.EqualFold(name[len(name)-4:], ".exe") {
-		var alias string
-		for _, binary := range binaries {
-			if strings.EqualFold(name, binary) {
-				return binary, true
-			}
-			if alias == "" && strings.EqualFold(name[:len(name)-4], binary) {
-				alias = binary
-			}
+	exe := len(name) > 4 && strings.EqualFold(name[len(name)-4:], ".exe")
+	var full, alias string
+	for _, binary := range binaries {
+		if name == binary {
+			return binary, true
 		}
-		return alias, alias != ""
+		if exe && full == "" && strings.EqualFold(name, binary) {
+			full = binary
+		}
+		if exe && alias == "" && strings.EqualFold(name[:len(name)-4], binary) {
+			alias = binary
+		}
 	}
-	return "", false
+	if full != "" {
+		return full, true
+	}
+	return alias, alias != ""
 }
 
 func examples(file string, source []byte, binaries []string) ([]exampleBlock, error) {

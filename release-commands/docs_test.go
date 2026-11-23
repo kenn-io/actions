@@ -34,6 +34,7 @@ func TestBinaryNameExecutableAlias(t *testing.T) {
 		{"STUB.EXE", []string{"stub"}, "stub", true},
 		{"STUB.EXE", []string{"stub", "stub.exe"}, "stub.exe", true},
 		{"stub.exe", []string{"stub", "stub.exe"}, "stub.exe", true},
+		{"stub.exe", []string{"STUB.EXE", "stub.exe"}, "stub.exe", true},
 		{"Stub", []string{"stub"}, "", false},
 	} {
 		got, ok := binaryName(test.name, test.binaries)
@@ -47,11 +48,11 @@ func TestInstallerExecutableCaseVariantUnknownCommand(t *testing.T) {
 	data, err := os.ReadFile(fixtureBinary)
 	require.NoError(t, err)
 	archive := filepath.Join(dir, "release.tar.gz")
-	require.NoError(t, writeFixtureArchive(archive, map[string][]byte{"other": data, "stub.exe": data}))
+	require.NoError(t, writeFixtureArchive(archive, map[string][]byte{"other": data, "stub": data}))
 	file := filepath.Join(dir, "install.ps1")
 	require.NoError(t, os.WriteFile(file, []byte("Write-Host 'other plain && STUB.EXE nope'\n"), 0o600))
 	var out, errOut bytes.Buffer
-	code := run(t.Context(), []string{"--archive", archive, "--release", "v1.0.0", "--binary", "other", "--binary", "stub.exe", file}, &out, &errOut)
+	code := run(t.Context(), []string{"--archive", archive, "--release", "v1.0.0", "--binary", "other", "--binary", "stub", file}, &out, &errOut)
 	require.Equal(t, 1, code, errOut.String())
 	require.Contains(t, errOut.String(), file+":1: other plain && STUB.EXE nope: v1.0.0")
 	require.Contains(t, errOut.String(), `has no command "nope"`)
