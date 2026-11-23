@@ -19,11 +19,7 @@ import (
 type example struct {
 	text        string
 	line        int
-	invocations []invocation
-}
-type invocation struct {
-	args   []string
-	binary string
+	invocations [][]string
 }
 type exampleBlock struct {
 	commands []example
@@ -188,14 +184,15 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
 		if err == nil && len(invocations) > 0 {
-			var matched []invocation
+			var matched [][]string
 			for i, args := range invocations {
 				name, ok := binaryName(args[0], binaries)
 				if i == 0 && !markdown && !ok {
 					return false
 				}
 				if ok {
-					matched = append(matched, invocation{args: args, binary: name})
+					args[0] = name
+					matched = append(matched, args)
 				}
 			}
 			if len(matched) > 0 {
