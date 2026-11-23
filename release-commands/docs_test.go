@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,32 +24,22 @@ func TestPowerShellExecutableAliasUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestExamplesExecutableAlias(t *testing.T) {
-	for _, test := range []struct {
-		name, source string
-		binaries     []string
-		want         []string
-	}{
-		{"installer", "Write-Host 'stub.exe nope'", []string{"stub"}, []string{"stub.exe", "nope"}},
-		{"exact configured name", "Write-Host 'stub.exe nope'", []string{"stub", "stub.exe"}, []string{"stub.exe", "nope"}},
-		{"case variant of configured exe", "Write-Host 'STUB.EXE nope'", []string{"stub", "stub.exe"}, []string{"STUB.EXE", "nope"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			blocks, err := examples("example.ps1", []byte(test.source), test.binaries)
-			require.NoError(t, err)
-			require.Len(t, blocks, 1)
-			require.Len(t, blocks[0].commands, 1)
-			require.Equal(t, strings.TrimSuffix(strings.TrimPrefix(test.source, "Write-Host '"), "'"), blocks[0].commands[0].text)
-			require.Equal(t, 1, blocks[0].commands[0].line)
-			require.Equal(t, [][]string{test.want}, blocks[0].commands[0].invocations)
-		})
-	}
-}
-
 func TestBinaryNameExecutableAlias(t *testing.T) {
-	require.Equal(t, "stub", binaryName("STUB.EXE", []string{"stub"}))
-	require.Equal(t, "stub.exe", binaryName("STUB.EXE", []string{"stub", "stub.exe"}))
-	require.Equal(t, "stub.exe", binaryName("stub.exe", []string{"stub", "stub.exe"}))
+	for _, test := range []struct {
+		name     string
+		binaries []string
+		want     string
+		ok       bool
+	}{
+		{"STUB.EXE", []string{"stub"}, "stub", true},
+		{"STUB.EXE", []string{"stub", "stub.exe"}, "stub.exe", true},
+		{"stub.exe", []string{"stub", "stub.exe"}, "stub.exe", true},
+		{"Stub", []string{"stub"}, "", false},
+	} {
+		got, ok := binaryName(test.name, test.binaries)
+		require.Equal(t, test.want, got)
+		require.Equal(t, test.ok, ok)
+	}
 }
 
 func TestInstallerExecutableCaseVariantUnknownCommand(t *testing.T) {

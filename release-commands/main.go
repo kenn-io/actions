@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -59,8 +58,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			for index, example := range block.commands {
 				problem := ""
 				for _, args := range example.invocations {
-					name := binaryName(args[0], *binaries)
-					if !slices.Contains(*binaries, name) {
+					name, ok := binaryName(args[0], *binaries)
+					if !ok {
 						continue
 					}
 					firstChecked = min(firstChecked, index)
