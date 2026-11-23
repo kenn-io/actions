@@ -19,7 +19,11 @@ import (
 type example struct {
 	text        string
 	line        int
-	invocations [][]string
+	invocations []invocation
+}
+type invocation struct {
+	args   []string
+	binary string
 }
 type exampleBlock struct {
 	commands []example
@@ -183,16 +187,21 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
-		if err != nil {
-			return false
-		}
-		if len(invocations) == 0 {
-			return false
-		}
-		_, first := binaryName(invocations[0][0], binaries)
-		if (markdown || first) && slices.ContainsFunc(invocations, func(args []string) bool { _, ok := binaryName(args[0], binaries); return ok }) {
-			current.commands = append(current.commands, example{text: value, line: line, invocations: invocations})
-			return true
+		if err == nil && len(invocations) > 0 {
+			var matched []invocation
+			for i, args := range invocations {
+				name, ok := binaryName(args[0], binaries)
+				if i == 0 && !markdown && !ok {
+					return false
+				}
+				if ok {
+					matched = append(matched, invocation{args: args, binary: name})
+				}
+			}
+			if len(matched) > 0 {
+				current.commands = append(current.commands, example{text: value, line: line, invocations: matched})
+				return true
+			}
 		}
 		return false
 	}

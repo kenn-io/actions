@@ -119,5 +119,5 @@ func TestExamplesSubstitutions(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, blocks, 1)
 	require.Len(t, blocks[0].commands, 1)
-	require.Contains(t, blocks[0].commands[0].invocations, []string{"msgvault", "completion", "bash"})
+	require.Contains(t, blocks[0].commands[0].invocations, invocation{args: []string{"msgvault", "completion", "bash"}, binary: "msgvault"})
 }

@@ -57,18 +57,14 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			blockFailed, firstChecked := false, len(block.commands)
 			for index, example := range block.commands {
 				problem := ""
-				for _, args := range example.invocations {
-					name, ok := binaryName(args[0], *binaries)
-					if !ok {
-						continue
-					}
+				for _, invocation := range example.invocations {
 					firstChecked = min(firstChecked, index)
-					binary := paths[name]
+					binary := paths[invocation.binary]
 					if binary == "" {
-						problem = fmt.Sprintf("%s: not in %s", args[0], filepath.Base(*archive))
+						problem = fmt.Sprintf("%s: not in %s", invocation.args[0], filepath.Base(*archive))
 						break
 					}
-					if err := cache.check(ctx, binary, args[1:]); err != nil {
+					if err := cache.check(ctx, binary, invocation.args[1:]); err != nil {
 						problem = fmt.Sprintf("%s %s", *release, err)
 						break
 					}
