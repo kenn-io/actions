@@ -10,7 +10,7 @@ import (
 )
 
 func TestPowerShellExecutableAliasUnknownCommand(t *testing.T) {
-	for _, binary := range []string{"stub", "stub.exe"} {
+	for _, binary := range []string{"stub", "stub.exe", "STUB.EXE"} {
 		t.Run(binary, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "example.md")
 			require.NoError(t, os.WriteFile(file, []byte("```powershell\n"+binary+" nope\n```\n"), 0o600))
