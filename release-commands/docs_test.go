@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -32,17 +33,33 @@ func TestExamplesExecutableAlias(t *testing.T) {
 	}{
 		{"installer", "Write-Host 'stub.exe nope'", []string{"stub"}, []string{"stub", "nope"}},
 		{"exact configured name", "Write-Host 'stub.exe nope'", []string{"stub", "stub.exe"}, []string{"stub.exe", "nope"}},
+		{"case variant of configured exe", "Write-Host 'STUB.EXE nope'", []string{"stub", "stub.exe"}, []string{"stub.exe", "nope"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			blocks, err := examples("example.ps1", []byte(test.source), test.binaries)
 			require.NoError(t, err)
 			require.Len(t, blocks, 1)
 			require.Len(t, blocks[0].commands, 1)
-			require.Equal(t, "stub.exe nope", blocks[0].commands[0].text)
+			require.Equal(t, strings.TrimSuffix(strings.TrimPrefix(test.source, "Write-Host '"), "'"), blocks[0].commands[0].text)
 			require.Equal(t, 1, blocks[0].commands[0].line)
 			require.Equal(t, [][]string{test.want}, blocks[0].commands[0].invocations)
 		})
 	}
+}
+
+func TestInstallerExecutableCaseVariantUnknownCommand(t *testing.T) {
+	dir := t.TempDir()
+	data, err := os.ReadFile(fixtureBinary)
+	require.NoError(t, err)
+	archive := filepath.Join(dir, "release.tar.gz")
+	require.NoError(t, writeFixtureArchive(archive, map[string][]byte{"other": data, "stub.exe": data}))
+	file := filepath.Join(dir, "install.ps1")
+	require.NoError(t, os.WriteFile(file, []byte("Write-Host 'other plain && STUB.EXE nope'\n"), 0o600))
+	var out, errOut bytes.Buffer
+	code := run(t.Context(), []string{"--archive", archive, "--release", "v1.0.0", "--binary", "other", "--binary", "stub.exe", file}, &out, &errOut)
+	require.Equal(t, 1, code, errOut.String())
+	require.Contains(t, errOut.String(), file+":1: other plain && STUB.EXE nope: v1.0.0")
+	require.Contains(t, errOut.String(), `has no command "nope"`)
 }
 
 func TestExamples(t *testing.T) {
