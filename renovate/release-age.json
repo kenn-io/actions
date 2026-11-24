@@ -1,7 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Hold every third-party release for 7 days before Renovate proposes it. kenn-io releases and security fixes are exempt. Exclude TypeScript 7.0.x for svelte-check.",
+  "description": "Hold every third-party release for 7 days before Renovate proposes it. kenn-io releases and security fixes are exempt. Exclude TypeScript 7.0.x for svelte-check. Remove the hourly PR limit so one scheduled run can open every group.",
   "dependencyDashboard": false,
+  "prHourlyLimit": 0,
   "minimumReleaseAge": "7 days",
   "minimumReleaseAgeBehaviour": "timestamp-required",
   "internalChecksFilter": "strict",

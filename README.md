@@ -43,6 +43,12 @@ The preset does the following:
   [Package manager release age](#package-manager-release-age) describes.
 - Turns off the Dependency Dashboard. Its "Pending Status Checks" checkboxes
   open a pull request for an unaged release right away, which defeats the wait.
+- Removes the hourly limit on new Renovate pull requests (`prHourlyLimit`).
+  Renovate's default of 2 an hour stops it from creating a new branch once 2
+  Renovate pull requests have opened that hour. A weekly schedule gets about
+  one run in its window, so a repository with more than 2 groups to update
+  opened only 2 a week, and the same groups lost every week. One pull request
+  per group already keeps the count small.
 - Excludes TypeScript `7.0.x`, including prereleases, because it lacks the
   compiler API that `svelte-check` needs. Later `7.x` versions remain eligible.
   The rule matches both the dependency name and package name `typescript`, so
