@@ -153,6 +153,21 @@ func visible(node ast.Node, source []byte) string {
 	return words.String()
 }
 
+// binaryName returns the configured binary a bare Windows name runs, or name when none does.
+func binaryName(name string, binaries []string) string {
+	if len(name) <= 4 || !strings.EqualFold(name[len(name)-4:], ".exe") || slices.Contains(binaries, name) {
+		return name
+	}
+	for _, candidate := range []string{name, name[:len(name)-4]} {
+		for _, binary := range binaries {
+			if strings.EqualFold(candidate, binary) {
+				return binary
+			}
+		}
+	}
+	return name
+}
+
 func examples(file string, source []byte, binaries []string) ([]exampleBlock, error) {
 	markdown := strings.EqualFold(filepath.Ext(file), ".md")
 	var result []exampleBlock
@@ -164,6 +179,9 @@ func examples(file string, source []byte, binaries []string) ([]exampleBlock, er
 		}
 		// Text that doesn't parse as a shell command is prose.
 		invocations, err := commands(value)
+		for _, args := range invocations {
+			args[0] = binaryName(args[0], binaries)
+		}
 		if err == nil && len(invocations) > 0 && (markdown || slices.Contains(binaries, invocations[0][0])) && slices.ContainsFunc(invocations, func(args []string) bool { return slices.Contains(binaries, args[0]) }) {
 			current.commands = append(current.commands, example{text: value, line: line, invocations: invocations})
 			return true

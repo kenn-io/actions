@@ -6,6 +6,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBinaryName(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		binaries []string
+		want     string
+	}{
+		{"STUB.EXE", []string{"stub"}, "stub"},
+		{"STUB.EXE", []string{"stub", "stub.exe"}, "stub.exe"},
+		{"stub.exe", []string{"STUB.EXE", "stub.exe"}, "stub.exe"},
+		{"STUB-HELPER", []string{"stub-helper"}, "STUB-HELPER"},
+	} {
+		require.Equal(t, test.want, binaryName(test.name, test.binaries))
+	}
+}
+
 func TestExamples(t *testing.T) {
 	type expectedExample struct {
 		text string
