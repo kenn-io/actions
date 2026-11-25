@@ -8,6 +8,7 @@ Shared GitHub Actions for kenn-io repositories.
 | [`delete-waiting-runs`](delete-waiting-runs/README.md) | Deletes a closed fork pull request's runs waiting for approval. |
 | [`first-paint`](first-paint/README.md) | Fails when a page can paint before its stylesheets or fonts are in place. |
 | [`release-commands`](release-commands/README.md) | Checks documented commands and flags against the latest release. |
+| [`test-report`](test-report/README.md) | Saves a test run's JSON report as an artifact named for its suite and job. |
 | [`sibling-pins`](sibling-pins/README.md) | Blocks a merge that pins a kenn-io sibling at a revision off that sibling's `main`. |
 
 Reference each action at `@main`. The calling repository's

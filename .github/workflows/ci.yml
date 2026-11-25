@@ -363,6 +363,66 @@ jobs:
           test ! -e "$RUNNER_TEMP/missing-deleted"
           test ! -e "$RUNNER_TEMP/empty-deleted"
 
+  test-report:
+    name: test-report (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Write fixture reports
+        run: |
+          mkdir -p "$RUNNER_TEMP/fixture/reports/nested"
+          printf '{"Action":"pass","Package":"example.com/a","Elapsed":1.5}\n' > "$RUNNER_TEMP/fixture/reports/a.json"
+          printf '{"Action":"pass","Package":"example.com/b","Elapsed":0.5}\n' > "$RUNNER_TEMP/fixture/reports/nested/b.json"
+      - uses: $/test-report
+        id: report
+        with:
+          suite: fixture-${{ matrix.os }}
+          path: ${{ runner.temp }}/fixture/reports/**/*.json
+          retention-days: 1
+      - uses: $/test-report
+        id: missing
+        with:
+          suite: missing-${{ matrix.os }}
+          path: ${{ runner.temp }}/fixture/absent/*.json
+      - uses: $/test-report
+        id: bad_suite
+        continue-on-error: true
+        with:
+          suite: bad/suite
+          path: ${{ runner.temp }}/fixture/reports/*.json
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: ${{ steps.report.outputs.artifact-name }}
+          path: ${{ runner.temp }}/downloaded
+      - name: Check the uploaded report
+        env:
+          NAME: ${{ steps.report.outputs.artifact-name }}
+          MISSING: ${{ steps.missing.outputs.artifact-name }}
+          BAD_SUITE: ${{ steps.bad_suite.outcome }}
+          EXPECTED_JOB: ${{ job.check_run_id }}
+          OS: ${{ matrix.os }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test "$NAME" = "gotestsum-fixture-$OS-attempt-$ATTEMPT"
+          test -z "$MISSING"
+          test "$BAD_SUITE" = failure
+          cd "$RUNNER_TEMP/downloaded"
+          test -f a.json
+          test -f nested/b.json
+          expected="{\"version\":1,\"kind\":\"gotestsum\",\"suite\":\"fixture-$OS\",\"job_id\":$EXPECTED_JOB,\"run_attempt\":$ATTEMPT}"
+          test "$(cat kenn-test-report.meta)" = "$expected"
+
   first-paint:
     name: first-paint
     runs-on: ubuntu-latest

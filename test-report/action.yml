@@ -1,0 +1,96 @@
+name: Test report
+description: Save a test run's JSON report as an artifact, under the name CI monitoring reads.
+inputs:
+  suite:
+    description: Suite name. Keep it the same across runs and attempts of the same tests.
+    required: true
+  path:
+    description: Report files, one pattern per line, as for actions/upload-artifact.
+    required: true
+  kind:
+    description: Report format. One of gotestsum, vitest, or playwright.
+    required: false
+    default: gotestsum
+  retention-days:
+    description: Days to keep the artifact.
+    required: false
+    default: '30'
+outputs:
+  artifact-name:
+    description: Name of the uploaded artifact, empty when no report file exists.
+    value: ${{ steps.prepare.outputs.found == 'true' && steps.prepare.outputs.name || '' }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare test report
+      id: prepare
+      shell: bash
+      env:
+        KIND: ${{ inputs.kind }}
+        SUITE: ${{ inputs.suite }}
+        REPORT_PATHS: ${{ inputs.path }}
+        JOB_ID: ${{ job.check_run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+      run: |
+        set -euo pipefail
+        case "$KIND" in
+          gotestsum | vitest | playwright) ;;
+          *) echo "::error::kind must be gotestsum, vitest, or playwright, not '$KIND'"; exit 1 ;;
+        esac
+        # Artifact names reject these characters, and the suite is written
+        # into the metadata file's JSON unescaped.
+        if [[ -z "$SUITE" || ! "$SUITE" =~ ^[[:print:]]+$ || "$SUITE" =~ [\"\\/:\<\>\|*?] ]]; then
+          echo "::error::suite must be printable and contain none of \" \\ / : < > | * ?"
+          exit 1
+        fi
+        if [[ ! "$JOB_ID" =~ ^[1-9][0-9]*$ ]]; then
+          echo "::error::job.check_run_id is unavailable, so the report cannot name its job"
+          exit 1
+        fi
+        shopt -s globstar nullglob
+        to_glob() { if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s\n' "$1"; fi; }
+        common=
+        while IFS= read -r pattern || [[ -n "$pattern" ]]; do
+          pattern="${pattern#"${pattern%%[![:space:]]*}"}"
+          pattern="${pattern%"${pattern##*[![:space:]]}"}"
+          [[ -z "$pattern" || "$pattern" == '!'* ]] && continue
+          while IFS= read -r match; do
+            [[ -f "$match" ]] || continue
+            dir=$(dirname "$match")
+            if [[ -z "$common" ]]; then
+              common=$dir
+              continue
+            fi
+            if [[ "${common:0:1}" == / && "${dir:0:1}" != / || "${common:0:1}" != / && "${dir:0:1}" == / ]]; then
+              echo "::error::report paths must be all relative or all absolute"
+              exit 1
+            fi
+            # Walk up to the deepest directory holding every report, so the
+            # metadata file leaves upload-artifact's archive root unchanged.
+            while [[ "$dir" != "$common" && "$dir" != "$common"/* && "$common" != . && "$common" != / ]]; do
+              common=$(dirname "$common")
+            done
+          done < <(compgen -G "$(to_glob "$pattern")" || true)
+        done <<< "$REPORT_PATHS"
+        name="$KIND-$SUITE-attempt-$RUN_ATTEMPT"
+        echo "name=$name" >> "$GITHUB_OUTPUT"
+        if [[ -z "$common" ]]; then
+          echo "No $KIND report matched; nothing to upload for $name."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        meta="$common/kenn-test-report.meta"
+        printf '{"version":1,"kind":"%s","suite":"%s","job_id":%s,"run_attempt":%s}\n' \
+          "$KIND" "$SUITE" "$JOB_ID" "$RUN_ATTEMPT" > "$meta"
+        if command -v cygpath >/dev/null; then meta=$(cygpath -m "$meta"); fi
+        echo "meta=$meta" >> "$GITHUB_OUTPUT"
+        echo "found=true" >> "$GITHUB_OUTPUT"
+    - uses: actions/upload-artifact@v7.0.2
+      if: steps.prepare.outputs.found == 'true'
+      with:
+        name: ${{ steps.prepare.outputs.name }}
+        path: |
+          ${{ inputs.path }}
+          ${{ steps.prepare.outputs.meta }}
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: error
