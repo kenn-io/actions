@@ -24,8 +24,10 @@ One artifact named `<kind>-<suite>-attempt-<run attempt>`, for example
   The action writes the file into the deepest directory that holds every
   matched report, so the archive's layout does not change.
 
-When no pattern matches a file, as when the test step never ran, the action
-uploads nothing and its `artifact-name` output is empty.
+The action's `artifact-name` and `artifact-id` outputs name the upload. When no
+pattern matches a file, as when the test step never ran, the action uploads
+nothing and both outputs are empty. Download a fresh upload in the same run by
+its ID: a lookup by name can miss an artifact uploaded moments earlier.
 
 ## Use it
 

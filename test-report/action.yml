@@ -19,6 +19,9 @@ outputs:
   artifact-name:
     description: Name of the uploaded artifact, empty when no report file exists.
     value: ${{ steps.prepare.outputs.found == 'true' && steps.prepare.outputs.name || '' }}
+  artifact-id:
+    description: ID of the uploaded artifact, empty when no report file exists.
+    value: ${{ steps.upload.outputs.artifact-id }}
 runs:
   using: composite
   steps:
@@ -86,6 +89,7 @@ runs:
         echo "meta=$meta" >> "$GITHUB_OUTPUT"
         echo "found=true" >> "$GITHUB_OUTPUT"
     - uses: actions/upload-artifact@v7.0.2
+      id: upload
       if: steps.prepare.outputs.found == 'true'
       with:
         name: ${{ steps.prepare.outputs.name }}

@@ -400,14 +400,19 @@ jobs:
         with:
           suite: bad/suite
           path: ${{ runner.temp }}/fixture/reports/*.json
+      # A lookup by name can miss an artifact uploaded a moment ago; its ID
+      # is available at once.
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: ${{ steps.report.outputs.artifact-name }}
+          artifact-ids: ${{ steps.report.outputs.artifact-id }}
           path: ${{ runner.temp }}/downloaded
+          merge-multiple: true
       - name: Check the uploaded report
         env:
           NAME: ${{ steps.report.outputs.artifact-name }}
+          ID: ${{ steps.report.outputs.artifact-id }}
           MISSING: ${{ steps.missing.outputs.artifact-name }}
+          MISSING_ID: ${{ steps.missing.outputs.artifact-id }}
           BAD_SUITE: ${{ steps.bad_suite.outcome }}
           EXPECTED_JOB: ${{ job.check_run_id }}
           OS: ${{ matrix.os }}
@@ -415,7 +420,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$NAME" = "gotestsum-fixture-$OS-attempt-$ATTEMPT"
+          test -n "$ID"
           test -z "$MISSING"
+          test -z "$MISSING_ID"
           test "$BAD_SUITE" = failure
           cd "$RUNNER_TEMP/downloaded"
           test -f a.json
