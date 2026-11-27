@@ -276,6 +276,50 @@ jobs:
         if: always()
         run: rm -f testdata/fixture.md
 
+  delete-waiting-runs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up fake gh
+        run: |
+          mkdir -p "$RUNNER_TEMP/fake-gh"
+          cat > "$RUNNER_TEMP/fake-gh/gh" <<'SH'
+          #!/bin/bash
+          set -eu
+          if [[ "$1 $2" == 'api --paginate' ]]; then
+            if [[ "$CASE" == failure ]]; then printf '1\n2\n3\n'; fi
+          elif [[ "$1 $2 $3" == 'api -X DELETE' ]]; then
+            id=${4##*/}
+            echo "$id" >> "$RUNNER_TEMP/$CASE-deleted"
+            [[ "$id" != 2 ]]
+          else
+            exit 1
+          fi
+          SH
+          chmod +x "$RUNNER_TEMP/fake-gh/gh"
+          echo "$RUNNER_TEMP/fake-gh" >> "$GITHUB_PATH"
+      - uses: $/delete-waiting-runs
+        id: failed_delete
+        continue-on-error: true
+        env:
+          CASE: failure
+      - uses: $/delete-waiting-runs
+        id: empty
+        env:
+          CASE: empty
+      - name: Check deletion results
+        env:
+          FAILED_OUTCOME: ${{ steps.failed_delete.outcome }}
+          EMPTY_OUTCOME: ${{ steps.empty.outcome }}
+        run: |
+          test "$FAILED_OUTCOME" = failure
+          test "$EMPTY_OUTCOME" = success
+          printf '1\n2\n3\n' | diff -u - "$RUNNER_TEMP/failure-deleted"
+          test ! -e "$RUNNER_TEMP/empty-deleted"
+
   first-paint:
     name: first-paint
     runs-on: ubuntu-latest

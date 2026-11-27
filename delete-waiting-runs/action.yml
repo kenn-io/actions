@@ -10,7 +10,11 @@ runs:
         BRANCH: ${{ github.event.pull_request.head.ref }}
         HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
       run: |
-        ids=$(gh api --paginate -X GET "repos/$REPO/actions/runs" -f status=action_required -f branch="$BRANCH" --jq '.workflow_runs[] | select(.conclusion == "action_required" and .head_repository.full_name == env.HEAD_REPO) | .id')
+        ids=$(gh api --paginate -X GET "repos/$REPO/actions/runs" -f status=action_required -f branch="$BRANCH" --jq '.workflow_runs[] | select(.head_repository.full_name == env.HEAD_REPO) | .id')
+        failed=0
         while read -r id; do
-          [[ -z "$id" ]] || gh api -X DELETE "repos/$REPO/actions/runs/$id"
+          if [[ -n "$id" ]] && ! gh api -X DELETE "repos/$REPO/actions/runs/$id"; then
+            failed=1
+          fi
         done <<< "$ids"
+        exit "$failed"
