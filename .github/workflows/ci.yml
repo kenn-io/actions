@@ -318,13 +318,13 @@ jobs:
             done
             [[ -n "$range" && -n "$query" ]]
             [[ "$status" == action_required && "$branch" == "$EXPECTED_BRANCH" ]]
-            [[ "$query" == '.total_count' || "$paginate" == 1 ]]
+            [[ "$query" == '.total_count' || "$paginate" == 1 || "$CASE" == page ]]
             start=${range%%..*}
             end=${range#*..}
-            jq -n --arg case "$CASE" --arg repo "$HEAD_REPO" --arg owner "$EXPECTED_OWNER" --arg branch "$branch" --arg status "$status" --arg start "$start" --arg end "$end" '
-              (if $case == "failure" or $case == "gone" or $case == "fallback" then [range(1; 4)] elif $case == "large" then [range(1; 1004)] elif $case == "dense" then [range(1; 1002)] elif $case == "one-second" then [range(1; 1001)] else [] end) |
+            jq -n --arg case "$CASE" --arg repo "$HEAD_REPO" --arg owner "$EXPECTED_OWNER" --arg branch "$branch" --arg status "$status" --arg start "$start" --arg end "$end" --arg paginate "$paginate" '
+              (if $case == "failure" or $case == "gone" or $case == "fallback" then [range(1; 4)] elif $case == "large" then [range(1; 1004)] elif $case == "dense" then [range(1; 1002)] elif $case == "one-second" then [range(1; 1001)] elif $case == "page" then [range(1; 102)] else [] end) |
               [ .[] | {id: ., head_repository: {full_name: (if ($case == "large" and . <= 1000) or ($case == "dense" and . != 999) then "other/repo" elif $case == "fallback" and . == 2 then "other/project" elif $case == "fallback" then ($owner + "/project") else $repo end), owner: {login: (if $case == "fallback" and . == 2 then "other" else $owner end)}}, head_branch: (if $case == "large" and . == 1002 then "other-branch" else $branch end), conclusion: (if $case == "large" and . == 1003 then "success" else "action_required" end), created_at: (if $case == "one-second" or ($case == "dense" and . <= 999) or ($case != "dense" and . <= 500) then "2025-01-01T00:00:00Z" else "2026-01-01T00:00:00Z" end)} | select(.head_branch == $branch and .conclusion == $status and .created_at >= $start and .created_at <= $end)] |
-              {total_count: length, workflow_runs: .[:1000]}
+              {total_count: length, workflow_runs: (if $paginate == "1" then .[:1000] else .[:100] end)}
             ' | jq -r "$query"
           fi
           SH
@@ -343,6 +343,10 @@ jobs:
         id: large
         env:
           CASE: large
+      - uses: $/delete-waiting-runs
+        id: page
+        env:
+          CASE: page
       - name: Check missing repository and deleted runs
         shell: bash
         env:
@@ -373,6 +377,7 @@ jobs:
           printf '1\n2\n3\n' | diff -u - "$RUNNER_TEMP/failure-deleted"
           test ! -e "$RUNNER_TEMP/empty-deleted"
           printf '1001\n' | diff -u - "$RUNNER_TEMP/large-deleted"
+          seq 1 101 | diff -u - "$RUNNER_TEMP/page-deleted"
 
   first-paint:
     name: first-paint
