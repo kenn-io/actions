@@ -3,11 +3,12 @@
 Delete runs waiting for approval when a fork pull request closes. The action
 matches the pull request's head branch and repository and requires `actions: write`.
 It deletes every matching run, including runs shared with another pull request.
-When the head repository is absent, it matches runs from any repository owned by
-the head owner. If both are absent, it fails. Deleted runs no longer appear in the Actions tab. The
-action does not check out pull request code.
+When the head repository is absent, it matches every run on that branch from the
+head owner, including runs from the owner's other repositories. If both the
+repository and owner are absent, it fails. Deleted runs no longer appear in the
+Actions tab. The action does not check out pull request code.
 
-Use a Linux runner. GitHub limits a filtered search to 1,000 runs, so the action
+Use a Linux runner with GNU `date`, such as `ubuntu-latest`. GitHub limits a filtered search to 1,000 runs, so the action
 splits large searches by creation time. If 1,000 or more runs share one second,
 it fails without deleting runs.
 

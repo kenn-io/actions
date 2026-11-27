@@ -1,5 +1,5 @@
 name: Delete waiting runs
-description: Delete runs waiting for approval that match a closed fork pull request's branch and repository.
+description: Delete runs waiting for approval that match a closed fork pull request's branch and head repository or owner.
 runs:
   using: composite
   steps:
