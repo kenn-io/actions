@@ -5,6 +5,7 @@ Shared GitHub Actions for kenn-io repositories.
 | Action | Purpose |
 | --- | --- |
 | [`changes`](changes/README.md) | Runs jobs for changed path groups, with full coverage for unknown paths. |
+| [`delete-waiting-runs`](delete-waiting-runs/README.md) | Deletes a closed fork pull request's runs waiting for approval. |
 | [`first-paint`](first-paint/README.md) | Fails when a page can paint before its stylesheets or fonts are in place. |
 | [`release-commands`](release-commands/README.md) | Checks documented commands and flags against the latest release. |
 | [`sibling-pins`](sibling-pins/README.md) | Blocks a merge that pins a kenn-io sibling at a revision off that sibling's `main`. |
