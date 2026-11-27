@@ -13,7 +13,7 @@ list_runs() {
     fi
     middle=$((start + (end - start) / 2))
     list_runs "$start" "$middle" || return 1
-    list_runs "$((middle + 1))" "$end" || return 1
+    list_runs "$((middle + 1))" "$end"
   else
     gh api --paginate -X GET "repos/$REPO/actions/runs" -f status=action_required -f branch="$BRANCH" -f created="$range" -f per_page=100 --jq '.workflow_runs[] | select(if env.HEAD_REPO != "" then .head_repository.full_name == env.HEAD_REPO else .head_repository.owner.login == env.HEAD_OWNER end) | .id'
   fi
