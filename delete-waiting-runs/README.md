@@ -2,8 +2,9 @@
 
 Delete runs waiting for approval when a fork pull request closes. The action
 matches the pull request's head branch and repository and requires `actions: write`.
-Deleted runs no longer appear in the Actions tab. The action does not check out
-pull request code.
+It deletes every matching run, including runs shared with another pull request.
+If the head repository is absent, it matches no runs. Deleted runs no longer appear
+in the Actions tab. The action does not check out pull request code.
 
 ```yaml
 name: Delete waiting runs
