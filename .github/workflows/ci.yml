@@ -303,12 +303,13 @@ jobs:
             [[ "$CASE" != failure || "$id" != 2 ]]
           else
             test ! -e "$RUNNER_TEMP/$CASE-deleted"
-            range= query= status= branch=
+            range= query= status= branch= paginate=
             for arg in "$@"; do
               case "$arg" in
                 created=*) range=${arg#created=} ;;
                 status=*) status=${arg#status=} ;;
                 branch=*) branch=${arg#branch=} ;;
+                --paginate) paginate=1 ;;
               esac
             done
             while (( $# )); do
@@ -317,6 +318,7 @@ jobs:
             done
             [[ -n "$range" && -n "$query" ]]
             [[ "$status" == action_required && "$branch" == "$EXPECTED_BRANCH" ]]
+            [[ "$query" == '.total_count' || "$paginate" == 1 ]]
             start=${range%%..*}
             end=${range#*..}
             jq -n --arg case "$CASE" --arg repo "$HEAD_REPO" --arg owner "$EXPECTED_OWNER" --arg branch "$branch" --arg status "$status" --arg start "$start" --arg end "$end" '
@@ -349,17 +351,16 @@ jobs:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           HEAD_OWNER: ${{ github.event.pull_request.head.user.login }}
         run: |
-          sed -n '/^      run: |/,$p' delete-waiting-runs/action.yml | tail -n +2 | sed 's/^        //' > "$RUNNER_TEMP/delete-runs"
-          CASE=gone bash -e -o pipefail "$RUNNER_TEMP/delete-runs"
+          CASE=gone bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh
           printf '1\n2\n3\n' | diff -u - "$RUNNER_TEMP/gone-deleted"
-          CASE=fallback HEAD_REPO= bash -e -o pipefail "$RUNNER_TEMP/delete-runs"
+          CASE=fallback HEAD_REPO= bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh
           printf '1\n3\n' | diff -u - "$RUNNER_TEMP/fallback-deleted"
-          CASE=dense bash -e -o pipefail "$RUNNER_TEMP/delete-runs"
+          CASE=dense bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh
           printf '999\n' | diff -u - "$RUNNER_TEMP/dense-deleted"
-          if CASE=one-second bash -e -o pipefail "$RUNNER_TEMP/delete-runs" 2> "$RUNNER_TEMP/one-second-error"; then exit 1; fi
+          if CASE=one-second bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh 2> "$RUNNER_TEMP/one-second-error"; then exit 1; fi
           grep -F 'Too many runs created in one second' "$RUNNER_TEMP/one-second-error"
           test ! -e "$RUNNER_TEMP/one-second-deleted"
-          if CASE=missing HEAD_REPO= HEAD_OWNER= bash -e -o pipefail "$RUNNER_TEMP/delete-runs" 2> "$RUNNER_TEMP/missing-error"; then exit 1; fi
+          if CASE=missing HEAD_REPO= HEAD_OWNER= bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh 2> "$RUNNER_TEMP/missing-error"; then exit 1; fi
           test -s "$RUNNER_TEMP/missing-error"
           test ! -e "$RUNNER_TEMP/missing-deleted"
       - name: Check deletion results

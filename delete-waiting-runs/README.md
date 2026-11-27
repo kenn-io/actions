@@ -7,6 +7,7 @@ When the head repository is absent, it matches every run on that branch from the
 head owner, including runs from the owner's other repositories. If both the
 repository and owner are absent, it fails. Deleted runs no longer appear in the
 Actions tab. The action does not check out pull request code.
+If a deletion fails, the action tries the remaining runs and then fails.
 
 Use a Linux runner with GNU `date`, such as `ubuntu-latest`. GitHub limits a filtered search to 1,000 runs, so the action
 splits large searches by creation time. If 1,000 or more runs share one second,
