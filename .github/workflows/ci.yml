@@ -400,14 +400,10 @@ jobs:
         with:
           suite: bad/suite
           path: ${{ runner.temp }}/fixture/reports/*.json
-      # A lookup by name can miss an artifact uploaded a moment ago; its ID
-      # is available at once.
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          artifact-ids: ${{ steps.report.outputs.artifact-id }}
-          path: ${{ runner.temp }}/downloaded
-          merge-multiple: true
-      - name: Check the uploaded report
+      # GitHub cannot yet serve an artifact to the job that uploaded it, so
+      # this job checks the metadata on disk and test-report-download checks
+      # the stored artifact.
+      - name: Check the action's outputs and metadata
         env:
           NAME: ${{ steps.report.outputs.artifact-name }}
           ID: ${{ steps.report.outputs.artifact-id }}
@@ -424,11 +420,32 @@ jobs:
           test -z "$MISSING"
           test -z "$MISSING_ID"
           test "$BAD_SUITE" = failure
+          expected="{\"version\":1,\"kind\":\"gotestsum\",\"suite\":\"fixture-$OS\",\"job_id\":$EXPECTED_JOB,\"run_attempt\":$ATTEMPT}"
+          test "$(cat "$RUNNER_TEMP/fixture/reports/kenn-test-report.meta")" = "$expected"
+
+  test-report-download:
+    name: test-report download (${{ matrix.os }})
+    needs: test-report
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: gotestsum-fixture-${{ matrix.os }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/downloaded
+      - name: Check the stored artifact
+        env:
+          OS: ${{ matrix.os }}
+        run: |
+          set -euo pipefail
           cd "$RUNNER_TEMP/downloaded"
           test -f a.json
           test -f nested/b.json
-          expected="{\"version\":1,\"kind\":\"gotestsum\",\"suite\":\"fixture-$OS\",\"job_id\":$EXPECTED_JOB,\"run_attempt\":$ATTEMPT}"
-          test "$(cat kenn-test-report.meta)" = "$expected"
+          grep -q "\"suite\":\"fixture-$OS\"" kenn-test-report.meta
 
   first-paint:
     name: first-paint

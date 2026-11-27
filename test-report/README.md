@@ -26,8 +26,8 @@ One artifact named `<kind>-<suite>-attempt-<run attempt>`, for example
 
 The action's `artifact-name` and `artifact-id` outputs name the upload. When no
 pattern matches a file, as when the test step never ran, the action uploads
-nothing and both outputs are empty. Download a fresh upload in the same run by
-its ID: a lookup by name can miss an artifact uploaded moments earlier.
+nothing and both outputs are empty. GitHub may not serve the artifact to the job
+that uploaded it; download it from a later job.
 
 ## Use it
 
