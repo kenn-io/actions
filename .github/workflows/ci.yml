@@ -319,9 +319,9 @@ jobs:
             [[ "$status" == action_required && "$branch" == "$EXPECTED_BRANCH" ]]
             start=${range%%..*}
             end=${range#*..}
-            jq -n --arg case "$CASE" --arg repo "$HEAD_REPO" --arg owner "$EXPECTED_OWNER" --arg branch "$branch" --arg status "$status" --arg start "${start:0:19}" --arg end "${end:0:19}" '
-              (if $case == "failure" or $case == "gone" or $case == "fallback" then [range(1; 4)] elif $case == "large" then [range(1; 1004)] else [] end) |
-              [ .[] | {id: ., head_repository: {full_name: (if $case == "large" and . <= 1000 then "other/repo" elif $case == "fallback" and . == 2 then "other/project" elif $case == "fallback" then ($owner + "/project") else $repo end), owner: {login: (if $case == "fallback" and . == 2 then "other" else $owner end)}}, head_branch: (if . == 1002 then "other-branch" else $branch end), conclusion: (if . == 1003 then "success" else "action_required" end), created_at: (if . <= 500 then "2025-01-01T00:00:00" else "2026-01-01T00:00:00" end)} | select(.head_branch == $branch and .conclusion == $status and .created_at >= $start and .created_at <= $end)] |
+            jq -n --arg case "$CASE" --arg repo "$HEAD_REPO" --arg owner "$EXPECTED_OWNER" --arg branch "$branch" --arg status "$status" --arg start "$start" --arg end "$end" '
+              (if $case == "failure" or $case == "gone" or $case == "fallback" then [range(1; 4)] elif $case == "large" then [range(1; 1004)] elif $case == "dense" then [range(1; 1002)] elif $case == "one-second" then [range(1; 1001)] else [] end) |
+              [ .[] | {id: ., head_repository: {full_name: (if ($case == "large" and . <= 1000) or ($case == "dense" and . != 999) then "other/repo" elif $case == "fallback" and . == 2 then "other/project" elif $case == "fallback" then ($owner + "/project") else $repo end), owner: {login: (if $case == "fallback" and . == 2 then "other" else $owner end)}}, head_branch: (if $case == "large" and . == 1002 then "other-branch" else $branch end), conclusion: (if $case == "large" and . == 1003 then "success" else "action_required" end), created_at: (if $case == "one-second" or ($case == "dense" and . <= 999) or ($case != "dense" and . <= 500) then "2025-01-01T00:00:00Z" else "2026-01-01T00:00:00Z" end)} | select(.head_branch == $branch and .conclusion == $status and .created_at >= $start and .created_at <= $end)] |
               {total_count: length, workflow_runs: .[:1000]}
             ' | jq -r "$query"
           fi
@@ -354,6 +354,11 @@ jobs:
           printf '1\n2\n3\n' | diff -u - "$RUNNER_TEMP/gone-deleted"
           CASE=fallback HEAD_REPO= bash -e -o pipefail "$RUNNER_TEMP/delete-runs"
           printf '1\n3\n' | diff -u - "$RUNNER_TEMP/fallback-deleted"
+          CASE=dense bash -e -o pipefail "$RUNNER_TEMP/delete-runs"
+          printf '999\n' | diff -u - "$RUNNER_TEMP/dense-deleted"
+          if CASE=one-second bash -e -o pipefail "$RUNNER_TEMP/delete-runs" 2> "$RUNNER_TEMP/one-second-error"; then exit 1; fi
+          grep -F 'Too many runs created in one second' "$RUNNER_TEMP/one-second-error"
+          test ! -e "$RUNNER_TEMP/one-second-deleted"
           if CASE=missing HEAD_REPO= HEAD_OWNER= bash -e -o pipefail "$RUNNER_TEMP/delete-runs" 2> "$RUNNER_TEMP/missing-error"; then exit 1; fi
           test -s "$RUNNER_TEMP/missing-error"
           test ! -e "$RUNNER_TEMP/missing-deleted"
