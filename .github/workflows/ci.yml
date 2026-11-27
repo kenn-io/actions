@@ -289,14 +289,28 @@ jobs:
           cat > "$RUNNER_TEMP/fake-gh/gh" <<'SH'
           #!/bin/bash
           set -eu
-          if [[ "$1 $2" == 'api --paginate' ]]; then
-            if [[ "$CASE" == failure ]]; then printf '1\n2\n3\n'; fi
-          elif [[ "$1 $2 $3" == 'api -X DELETE' ]]; then
+          if [[ "$1 $2 $3" == 'api -X DELETE' ]]; then
             id=${4##*/}
             echo "$id" >> "$RUNNER_TEMP/$CASE-deleted"
-            [[ "$id" != 2 ]]
+            [[ "$CASE" != failure || "$id" != 2 ]]
           else
-            exit 1
+            test ! -e "$RUNNER_TEMP/$CASE-deleted"
+            range= query=
+            for arg in "$@"; do
+              case "$arg" in created=*) range=${arg#created=} ;; esac
+            done
+            while (( $# )); do
+              if [[ "$1" == --jq ]]; then query=$2; break; fi
+              shift
+            done
+            [[ -n "$range" && -n "$query" ]]
+            start=${range%%..*}
+            end=${range#*..}
+            jq -n --arg case "$CASE" --arg repo "$HEAD_REPO" --arg start "${start:0:19}" --arg end "${end:0:19}" '
+              (if $case == "failure" then [range(1; 4)] elif $case == "large" then [range(1; 1002)] else [] end) |
+              [ .[] | {id: ., head_repository: {full_name: (if . == 1001 then "other/repo" else $repo end)}, created_at: (if . <= 500 then "2025-01-01T00:00:00" else "2026-01-01T00:00:00" end)} | select(.created_at >= $start and .created_at <= $end)] |
+              {total_count: length, workflow_runs: .}
+            ' | jq -r "$query"
           fi
           SH
           chmod +x "$RUNNER_TEMP/fake-gh/gh"
@@ -310,6 +324,10 @@ jobs:
         id: empty
         env:
           CASE: empty
+      - uses: $/delete-waiting-runs
+        id: large
+        env:
+          CASE: large
       - name: Check deletion results
         env:
           FAILED_OUTCOME: ${{ steps.failed_delete.outcome }}
@@ -319,6 +337,7 @@ jobs:
           test "$EMPTY_OUTCOME" = success
           printf '1\n2\n3\n' | diff -u - "$RUNNER_TEMP/failure-deleted"
           test ! -e "$RUNNER_TEMP/empty-deleted"
+          seq 1 1000 | diff -u - <(sort -n "$RUNNER_TEMP/large-deleted")
 
   first-paint:
     name: first-paint
