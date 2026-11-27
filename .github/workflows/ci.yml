@@ -279,6 +279,8 @@ jobs:
   delete-waiting-runs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      EXPECTED_BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -295,20 +297,25 @@ jobs:
             [[ "$CASE" != failure || "$id" != 2 ]]
           else
             test ! -e "$RUNNER_TEMP/$CASE-deleted"
-            range= query=
+            range= query= status= branch=
             for arg in "$@"; do
-              case "$arg" in created=*) range=${arg#created=} ;; esac
+              case "$arg" in
+                created=*) range=${arg#created=} ;;
+                status=*) status=${arg#status=} ;;
+                branch=*) branch=${arg#branch=} ;;
+              esac
             done
             while (( $# )); do
               if [[ "$1" == --jq ]]; then query=$2; break; fi
               shift
             done
             [[ -n "$range" && -n "$query" ]]
+            [[ "$status" == action_required && "$branch" == "$EXPECTED_BRANCH" ]]
             start=${range%%..*}
             end=${range#*..}
-            jq -n --arg case "$CASE" --arg repo "$HEAD_REPO" --arg start "${start:0:19}" --arg end "${end:0:19}" '
-              (if $case == "failure" then [range(1; 4)] elif $case == "large" then [range(1; 1002)] else [] end) |
-              [ .[] | {id: ., head_repository: {full_name: (if . == 1001 then "other/repo" else $repo end)}, created_at: (if . <= 500 then "2025-01-01T00:00:00" else "2026-01-01T00:00:00" end)} | select(.created_at >= $start and .created_at <= $end)] |
+            jq -n --arg case "$CASE" --arg repo "$HEAD_REPO" --arg branch "$branch" --arg status "$status" --arg start "${start:0:19}" --arg end "${end:0:19}" '
+              (if $case == "failure" then [range(1; 4)] elif $case == "large" then [range(1; 1004)] else [] end) |
+              [ .[] | {id: ., head_repository: {full_name: (if . == 1001 then "other/repo" else $repo end)}, head_branch: (if . == 1002 then "other-branch" else $branch end), conclusion: (if . == 1003 then "success" else "action_required" end), created_at: (if . <= 500 then "2025-01-01T00:00:00" else "2026-01-01T00:00:00" end)} | select(.head_branch == $branch and .conclusion == $status and .created_at >= $start and .created_at <= $end)] |
               {total_count: length, workflow_runs: .}
             ' | jq -r "$query"
           fi
