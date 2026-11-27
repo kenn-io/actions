@@ -276,6 +276,93 @@ jobs:
         if: always()
         run: rm -f testdata/fixture.md
 
+  delete-waiting-runs:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref != '' && github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.user.login != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_BRANCH: ${{ github.event.pull_request.head.ref }}
+      EXPECTED_OWNER: ${{ github.event.pull_request.head.user.login }}
+      EXPECTED_REPO: ${{ github.repository }}
+      EXPECTED_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up fake gh
+        run: |
+          mkdir -p "$RUNNER_TEMP/fake-gh"
+          cat > "$RUNNER_TEMP/fake-gh/gh" <<'SH'
+          #!/bin/bash
+          set -eu
+          [[ -n "$GH_TOKEN" && "$GH_TOKEN" == "$EXPECTED_TOKEN" && "$HEAD_OWNER" == "$EXPECTED_OWNER" ]]
+          if [[ "$1 $2 $3 $4" == 'api -i -X DELETE' ]]; then
+            [[ "$5" == "repos/$EXPECTED_REPO/actions/runs/"* ]]
+            id=${5##*/}
+            echo "$id" >> "$RUNNER_TEMP/$CASE-deleted"
+            if [[ "$CASE" == gone && "$id" == 2 ]]; then
+              echo 'HTTP/2.0 404 Not Found'
+              exit 1
+            fi
+            [[ "$CASE" != failure || "$id" != 2 ]]
+          else
+            range= query= status= branch= paginate= endpoint=
+            for arg in "$@"; do
+              case "$arg" in
+                created=*) range=${arg#created=} ;;
+                status=*) status=${arg#status=} ;;
+                branch=*) branch=${arg#branch=} ;;
+                --paginate) paginate=1 ;;
+                "repos/$EXPECTED_REPO/actions/runs") endpoint=1 ;;
+              esac
+            done
+            while (( $# )); do
+              if [[ "$1" == --jq ]]; then query=$2; break; fi
+              shift
+            done
+            [[ -n "$range" && -n "$query" && "$endpoint" == 1 ]]
+            [[ "$status" == action_required && "$branch" == "$EXPECTED_BRANCH" ]]
+            start=${range%%..*}
+            end=${range#*..}
+            jq -n --arg case "$CASE" --arg repo "$HEAD_REPO" --arg owner "$EXPECTED_OWNER" --arg branch "$branch" --arg status "$status" --arg start "$start" --arg end "$end" --arg paginate "$paginate" '
+              (if $case == "failure" or $case == "gone" or $case == "fallback" then [range(1; 4)] elif $case == "large" or $case == "dense" then [range(1; 1002)] elif $case == "one-second" then [range(1; 1001)] else [] end) |
+              [ .[] | {id: ., head_repository: {full_name: (if ($case == "large" and . <= 1000) or ($case == "dense" and . != 999) then ($owner + "/other") elif $case == "fallback" and . == 2 then "other/project" elif $case == "fallback" then ($owner + "/project") else $repo end), owner: {login: (if $case == "fallback" and . == 2 then "other" else $owner end)}}, head_branch: $branch, conclusion: "action_required", created_at: (if $case == "one-second" or ($case == "dense" and . <= 999) or ($case != "dense" and . <= 500) then "2025-01-01T00:00:00Z" else "2026-01-01T00:00:00Z" end)} | select(.head_branch == $branch and .conclusion == $status and .created_at >= $start and .created_at <= $end)] |
+              {total_count: length, workflow_runs: (if $paginate == "1" then .[:1000] else .[:100] end)}
+            ' | jq -r "$query"
+          fi
+          SH
+          chmod +x "$RUNNER_TEMP/fake-gh/gh"
+          echo "$RUNNER_TEMP/fake-gh" >> "$GITHUB_PATH"
+      - uses: $/delete-waiting-runs
+        env:
+          CASE: empty
+      - name: Check missing repository and deleted runs
+        env:
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_OWNER: ${{ github.event.pull_request.head.user.login }}
+          GH_TOKEN: fixture-token
+          EXPECTED_TOKEN: fixture-token
+        run: |
+          if CASE=failure bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh; then exit 1; fi
+          printf '1\n2\n3\n' | diff -u - "$RUNNER_TEMP/failure-deleted"
+          CASE=large bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh
+          printf '1001\n' | diff -u - "$RUNNER_TEMP/large-deleted"
+          CASE=gone bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh
+          printf '1\n2\n3\n' | diff -u - "$RUNNER_TEMP/gone-deleted"
+          CASE=fallback HEAD_REPO= bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh
+          printf '1\n3\n' | diff -u - "$RUNNER_TEMP/fallback-deleted"
+          CASE=dense bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh
+          printf '999\n' | diff -u - "$RUNNER_TEMP/dense-deleted"
+          if CASE=one-second bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh 2> "$RUNNER_TEMP/one-second-error"; then exit 1; fi
+          grep -F 'Too many runs created in one second' "$RUNNER_TEMP/one-second-error"
+          test ! -e "$RUNNER_TEMP/one-second-deleted"
+          if CASE=missing HEAD_REPO= HEAD_OWNER= bash -e -o pipefail delete-waiting-runs/delete-waiting-runs.sh 2> "$RUNNER_TEMP/missing-error"; then exit 1; fi
+          test -s "$RUNNER_TEMP/missing-error"
+          test ! -e "$RUNNER_TEMP/missing-deleted"
+          test ! -e "$RUNNER_TEMP/empty-deleted"
+
   first-paint:
     name: first-paint
     runs-on: ubuntu-latest

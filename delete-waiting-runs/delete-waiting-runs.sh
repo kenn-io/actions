@@ -1,0 +1,31 @@
+if [[ -z "$HEAD_REPO" && -z "$HEAD_OWNER" ]]; then
+  echo 'The pull request has no head repository or owner.' >&2
+  exit 1
+fi
+list_runs() {
+  local start=$1 end=$2 count middle range
+  range="$(date -u -d "@$start" +%Y-%m-%dT%H:%M:%SZ)..$(date -u -d "@$end" +%Y-%m-%dT%H:%M:%SZ)"
+  count=$(gh api -X GET "repos/$REPO/actions/runs" -f status=action_required -f branch="$BRANCH" -f created="$range" -f per_page=1 --jq '.total_count') || return 1
+  if (( count >= 1000 )); then
+    if (( start == end )); then
+      echo "Too many runs created in one second to list safely: $range" >&2
+      return 1
+    fi
+    middle=$((start + (end - start) / 2))
+    list_runs "$start" "$middle" || return 1
+    list_runs "$((middle + 1))" "$end"
+  else
+    gh api --paginate -X GET "repos/$REPO/actions/runs" -f status=action_required -f branch="$BRANCH" -f created="$range" -f per_page=100 --jq '.workflow_runs[] | select(if env.HEAD_REPO != "" then .head_repository.full_name == env.HEAD_REPO else .head_repository.owner.login == env.HEAD_OWNER end) | .id'
+  fi
+}
+ids=$(list_runs 0 "$(($(date +%s) + 86400))")
+failed=0
+while read -r id; do
+  if [[ -n "$id" ]] && ! output=$(gh api -i -X DELETE "repos/$REPO/actions/runs/$id" 2>&1); then
+    if [[ "$output" != HTTP/*" 404 "* ]]; then
+      printf '%s\n' "$output" >&2
+      failed=1
+    fi
+  fi
+done <<< "$ids"
+exit "$failed"
