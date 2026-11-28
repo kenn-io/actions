@@ -363,6 +363,108 @@ jobs:
           test ! -e "$RUNNER_TEMP/missing-deleted"
           test ! -e "$RUNNER_TEMP/empty-deleted"
 
+  test-report-unit:
+    name: test-report unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: test-report
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: lts/*
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+
+  test-report:
+    name: test-report (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Write fixture reports
+        run: |
+          mkdir -p "$RUNNER_TEMP/fixture/reports/nested"
+          printf '{"Action":"pass","Package":"example.com/a","Elapsed":1.5}\n' > "$RUNNER_TEMP/fixture/reports/a.json"
+          printf '{"Action":"pass","Package":"example.com/b","Elapsed":0.5}\n' > "$RUNNER_TEMP/fixture/reports/nested/b.json"
+      - uses: $/test-report
+        id: report
+        with:
+          suite: fixture-${{ matrix.os }}
+          path: ${{ runner.temp }}/fixture/reports/**/*.json
+          retention-days: 1
+      - uses: $/test-report
+        id: missing
+        with:
+          suite: missing-${{ matrix.os }}
+          path: ${{ runner.temp }}/fixture/absent/*.json
+      - uses: $/test-report
+        id: bad_suite
+        continue-on-error: true
+        with:
+          suite: bad/suite
+          path: ${{ runner.temp }}/fixture/reports/*.json
+      # GitHub cannot yet serve an artifact to the job that uploaded it, so
+      # this job checks the metadata on disk and test-report-download checks
+      # the stored artifact.
+      - name: Check the action's outputs and metadata
+        env:
+          NAME: ${{ steps.report.outputs.artifact-name }}
+          ID: ${{ steps.report.outputs.artifact-id }}
+          MISSING: ${{ steps.missing.outputs.artifact-name }}
+          MISSING_ID: ${{ steps.missing.outputs.artifact-id }}
+          BAD_SUITE: ${{ steps.bad_suite.outcome }}
+          EXPECTED_JOB: ${{ job.check_run_id }}
+          OS: ${{ matrix.os }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test "$NAME" = "gotestsum-fixture-$OS-attempt-$ATTEMPT"
+          test -n "$ID"
+          test -z "$MISSING"
+          test -z "$MISSING_ID"
+          test "$BAD_SUITE" = failure
+          expected="{\"version\":1,\"kind\":\"gotestsum\",\"suite\":\"fixture-$OS\",\"job_id\":$EXPECTED_JOB,\"run_attempt\":$ATTEMPT}"
+          test "$(cat "$RUNNER_TEMP/fixture/reports/kenn-test-report.meta")" = "$expected"
+
+  test-report-download:
+    name: test-report download (${{ matrix.os }})
+    needs: test-report
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: gotestsum-fixture-${{ matrix.os }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/downloaded
+      - name: Check the stored artifact
+        env:
+          OS: ${{ matrix.os }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/downloaded"
+          test -f a.json
+          test -f nested/b.json
+          grep -q "\"suite\":\"fixture-$OS\"" kenn-test-report.meta
+
   first-paint:
     name: first-paint
     runs-on: ubuntu-latest

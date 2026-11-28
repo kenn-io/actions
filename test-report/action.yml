@@ -1,0 +1,58 @@
+name: Test report
+description: Save a test run's JSON report as an artifact, under the name CI monitoring reads.
+inputs:
+  suite:
+    description: Suite name. Keep it the same across runs and attempts of the same tests.
+    required: true
+  path:
+    description: Report files, one pattern per line, as for actions/upload-artifact.
+    required: true
+  kind:
+    description: Report format. One of gotestsum, vitest, or playwright.
+    required: false
+    default: gotestsum
+  retention-days:
+    description: Days to keep the artifact.
+    required: false
+    default: '30'
+outputs:
+  artifact-name:
+    description: Name of the uploaded artifact, empty when no report file exists.
+    value: ${{ steps.prepare.outputs.found == 'true' && steps.prepare.outputs.name || '' }}
+  artifact-id:
+    description: ID of the uploaded artifact, empty when no report file exists.
+    value: ${{ steps.upload.outputs.artifact-id }}
+runs:
+  using: composite
+  steps:
+    - name: Set up Node for the report
+      uses: actions/setup-node@v7.1.0
+      with:
+        node-version: lts/*
+    - name: Install the report preparation
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --omit=dev --no-audit --no-fund
+    # Finds the reports as upload-artifact does and writes the metadata file
+    # naming the job into the archive's root.
+    - name: Prepare test report
+      id: prepare
+      shell: bash
+      env:
+        PREPARE: ${{ github.action_path }}/prepare.mjs
+        KIND: ${{ inputs.kind }}
+        SUITE: ${{ inputs.suite }}
+        REPORT_PATHS: ${{ inputs.path }}
+        JOB_ID: ${{ job.check_run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+      run: node "$PREPARE"
+    - uses: actions/upload-artifact@v7.0.2
+      id: upload
+      if: steps.prepare.outputs.found == 'true'
+      with:
+        name: ${{ steps.prepare.outputs.name }}
+        path: |
+          ${{ inputs.path }}
+          ${{ steps.prepare.outputs.meta }}
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: error
