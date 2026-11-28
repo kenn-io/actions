@@ -363,6 +363,24 @@ jobs:
           test ! -e "$RUNNER_TEMP/missing-deleted"
           test ! -e "$RUNNER_TEMP/empty-deleted"
 
+  test-report-unit:
+    name: test-report unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: test-report
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: lts/*
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+
   test-report:
     name: test-report (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -370,7 +388,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     defaults:
       run:
         shell: bash
@@ -431,7 +449,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/download-artifact@v8.0.2
         with:

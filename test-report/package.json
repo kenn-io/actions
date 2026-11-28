@@ -1,0 +1,22 @@
+{
+  "name": "@kenn-io/test-report",
+  "private": true,
+  "type": "module",
+  "description": "Save a test run's JSON report as an artifact named for its suite and job.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@actions/core": "3.0.1",
+    "@actions/glob": "0.7.0"
+  }
+}

@@ -51,9 +51,16 @@ failed test step still uploads its report.
 | Input | Default | Meaning |
 | --- | --- | --- |
 | `suite` | required | Names the tests this report covers. Keep it the same across runs and run attempts: history is kept per suite, and a retry is matched to its earlier attempt by suite. A matrix job needs a suite per matrix entry, such as `linux-${{ matrix.shard }}`. |
-| `path` | required | Report files, one pattern per line, as for `actions/upload-artifact`. Patterns may be relative to the workspace or absolute, but not a mix. |
+| `path` | required | Report files, one pattern per line. Patterns match as in `actions/upload-artifact`, with the same `@actions/glob` options: a directory names every file in it, `!` excludes, and hidden files are skipped. |
 | `kind` | `gotestsum` | Report format: `gotestsum` for `go test -json` events, `vitest` or `playwright` for their JSON reporters. |
 | `retention-days` | `30` | Days to keep the artifact. |
+
+The metadata file is written to the directory `upload-artifact` archives from:
+the pattern's fixed leading directory, or the common directory of several
+patterns. That directory must be writable.
+
+The action runs on Linux, macOS, and Windows runners. It sets up the current
+Node LTS with `actions/setup-node`, which later steps in the job also see.
 
 Each artifact name must be unique within a workflow run, so two calls with the
 same kind and suite in one run fail. Remove any other upload step that uses the
